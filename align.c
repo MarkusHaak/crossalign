@@ -167,66 +167,50 @@ matches(char a, char b)
 int backtrace2(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
 			   const int16_t qlen, const int16_t s1len, const int16_t s2len,
 			   bool** transitions) {
-	//bool reachable[s1len+s2len+1][qlen+1];
-	//for (int i=s1len+s2len; i>s1len; i--) {
-	//	for (int j=qlen; j>=0; j--) {
-	//		reachable[i][j] = false;
-	//	}
-	//}
-	//reachable[s1len+s2len][qlen] = true;
-	//for (int i=s1len+s2len; i>s1len; i--) {
-	//	for (int j=qlen; j>=0; j--) {
-	//		if (reachable[i][j] == true) {
-	//			if (ins[i][j] == true) reachable[i][j-1] = true;
-	//			if (del[i][j] == true) reachable[i-1][j] = true;
-	//			if (match[i][j] == true) reachable[i-1][j-1] = true;
-	//			if (mmatch[i][j] == true) reachable[i-1][j-1] = true;
-	//			if (gst[i][j] == true) {
-	//				if (i <= s1len) {
-	//					reachable[s1len][j] = true;
-	//				}
-	//				else {
-	//					for (int k = i-1; k >= 0; k--) {
-	//						if (gen[k][j] == true) reachable[k][j] = true;
-	//					}
-	//				}
-	//			}
-	//		}
-	//	}
-	//}
-
 	bool reachable[s2len][qlen+1];
-	for (int i=0; i<s2len; i++) {
-		for (int j=0; j<=qlen; j++) {
-			reachable[i][j] = false;
+	if (s2len > 0) {
+		for (int i=0; i<s2len; i++) {
+			for (int j=0; j<=qlen; j++) {
+				reachable[i][j] = false;
+			}
 		}
-	}
-	reachable[s2len-1][qlen] = true;
-	for (int i=s2len-1; i>=0; i--) {
-		for (int j=qlen; j>=0; j--) {
-			if (reachable[i][j] == true) {
-				if (ins[i+s1len+1][j] == true) reachable[i][j-1] = true;
-				if (i > 0) {
-					if (del[i+s1len+1][j] == true) reachable[i-1][j] = true;
-					if (match[i+s1len+1][j] == true || mmatch[i+s1len+1][j] == true) reachable[i-1][j-1] = true;
+		reachable[s2len-1][qlen] = true;
+		for (int i=s2len-1; i>=0; i--) {
+			for (int j=qlen; j>=0; j--) {
+				if (reachable[i][j] == true) {
+					if (ins[i+s1len+1][j] == true) reachable[i][j-1] = true;
+					if (i > 0) {
+						if (del[i+s1len+1][j] == true) reachable[i-1][j] = true;
+						if (match[i+s1len+1][j] == true || mmatch[i+s1len+1][j] == true) reachable[i-1][j-1] = true;
+					}
+				}
+			}
+		}
+
+		for (int i=s1len+1; i<=s1len+s2len; i++) {
+			for (int j=0; j<=qlen; j++) {
+				if (reachable[i-s1len-1][j] == true) {
+					if (i == s1len+1) {
+						if (match[i][j] == true || mmatch[i][j] == true || del[i][j] == true) transitions[s1len-1][i-s1len] = true;
+					}
+					if (gst[i][j] == true) {
+						if (match[s1len][j] == true || mmatch[s1len][j] == true || del[s1len][j] == true || ins[s1len][j] == true) transitions[s1len][i-s1len] = true;
+						for (int k=s1len-1; k >= 0; k--) {
+							if (gen[k][j] == true) {
+								transitions[k][i-s1len] = true;
+							}
+						}
+					}
 				}
 			}
 		}
 	}
-
-	for (int i=s1len+1; i<=s1len+s2len; i++) {
-		for (int j=0; j<=qlen; j++) {
-			if (reachable[i-s1len-1][j] == true) {
-				if (i == s1len+1) {
-					if (match[i][j] == true || mmatch[i][j] == true || del[i][j] == true) transitions[s1len-1][i-s1len] = true;
-				}
-				if (gst[i][j] == true) {
-					if (match[s1len][j] == true || mmatch[s1len][j] == true || del[s1len][j] == true || ins[s1len][j] == true) transitions[s1len][i-s1len] = true;
-					for (int k=s1len-1; k >= 0; k--) {
-						if (gen[k][j] == true) {
-							transitions[k][i-s1len] = true;
-						}
-					}
+	else {
+		if (match[s1len][qlen] == true || mmatch[s1len][qlen] == true || del[s1len][qlen] == true || ins[s1len][qlen] == true) transitions[s1len][0] = true;
+		if (gst[s1len][qlen] == true) {
+			for (int k=s1len-1; k >= 0; k--) {
+				if (gen[k][qlen] == true) {
+					transitions[k][0] = true;
 				}
 			}
 		}
