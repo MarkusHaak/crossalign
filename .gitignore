@@ -3,4 +3,5 @@
 align
 *.so
 ctypesTest.py
-
+*tmp*
+*.o
