@@ -5,11 +5,6 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-#from tqdm import tqdm
-#import subprocess
-#from itertools import groupby, count
-#from collections import deque
-#from io import StringIO
 import ctypes as ct
 import re
 from pandarallel import pandarallel
@@ -318,7 +313,7 @@ def plot_norm_score_distribution(df, title, nbins=50):
 if __name__ == '__main__':
     args = get_args()
 
-    pandarallel.initialize(nb_workers=args.processes, progress_bar=False)
+    pandarallel.initialize(nb_workers=args.processes, progress_bar=args.progress)
 
     # read sequence data
     fq_files = []
