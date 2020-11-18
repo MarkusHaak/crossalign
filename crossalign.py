@@ -531,8 +531,7 @@ if __name__ == '__main__':
 
     print(' - aligning')
     # initialize the necessary data structures
-    wd = !pwd
-    clib = os.path.join(str(wd[0]), "align.so")
+    clib = os.path.join(os.path.realpath(__file__), "align.so")
 
     nd_pp = np.ctypeslib.ndpointer(dtype=np.uintp, ndim=1, flags='C_CONTIGUOUS')
     align = ct.CDLL(clib).align
