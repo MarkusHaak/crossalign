@@ -390,7 +390,7 @@ if __name__ == '__main__':
     print("{:>11} {:>5.1f} % of reads align against any genome sequence".format(c, c/len(reads)*100.))
 
     if not (args.mean and args.std):
-        print(" - determining statistics about per-base difference ([align. subject len] - [align. query len]) / [align. query len] al from genome alignments")
+        print(" - determining statistics about per-base difference ([align. subject len] - [align. query len]) / [align. query len] from genome alignments")
         sequence_length_stats(gn_algn_df)
         print("{:>11.4f} mean of per-base difference in sequence length".format(args.mean))
         print("{:>11.4f} std dev of per-base difference in sequence length".format(args.std))
@@ -531,7 +531,7 @@ if __name__ == '__main__':
 
     print(' - aligning')
     # initialize the necessary data structures
-    clib = os.path.join(os.path.realpath(__file__), "align.so")
+    clib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "align.so")
 
     nd_pp = np.ctypeslib.ndpointer(dtype=np.uintp, ndim=1, flags='C_CONTIGUOUS')
     align = ct.CDLL(clib).align
