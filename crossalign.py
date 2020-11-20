@@ -211,17 +211,19 @@ def get_query_seq(df, sel, fix=True):
     if fix:
         # fix query end & start of reads with insufficient terminal alignments
         df.loc[sel & df.query_st.isnull(), ['query_st', 'ref1_trim']] = pd.DataFrame(
-            df.loc[sel & df.query_st.isnull()].parallel_apply(lambda row: fix_query_st(row), axis=1).values.tolist(), 
+            df.loc[sel & df.query_st.isnull()].apply(lambda row: fix_query_st(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_st.isnull()].index, columns=['query_st', 'ref1_trim']
         )
         df.loc[sel & df.query_en.isnull(), ['query_en', 'ref2_trim']] = pd.DataFrame(
-            df.loc[sel & df.query_en.isnull()].parallel_apply(lambda row: fix_query_en(row), axis=1).values.tolist(), 
+            df.loc[sel & df.query_en.isnull()].apply(lambda row: fix_query_en(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_en.isnull()].index, columns=['query_en', 'ref2_trim']
         )
     
+    sel_ = sel & df.query_st.notnull()
     df.loc[sel, 'query_st'] -= args.strip
-    df.loc[sel, 'query_en'] += args.strip
     df.loc[sel, 'ref1_trim'] += args.strip
+    sel_ = sel & df.query_en.notnull()
+    df.loc[sel, 'query_en'] += args.strip
     df.loc[sel, 'ref2_trim'] += args.strip
     return df
 
@@ -269,6 +271,46 @@ def c_align_row(row):
     row['score'] = score
     row['transitions'] = transitions_hr
     return row
+
+def get_ref1(row):
+    if row.trans_order == 1.:
+        subj = adapter.loc[row.subj_ad]
+        strand = row.strand_ad
+        sst = row.sst_ad
+        sen = row.sen_ad
+    else:
+        subj = genome.loc[row.subj_gn]
+        strand = row.strand_gn
+        sst = row.sst_gn
+        sen = row.sen_gn
+    
+    if strand == '+':
+        ref1 = subj.seq[(sen - int(row.ref1_trim))                                : (sen - int(row.ref1_trim)) + int(row.max_ref_len)]
+    else:
+        ref1 = subj.seq[max((sst + int(row.ref1_trim)) - int(row.max_ref_len), 0) : (sst + int(row.ref1_trim))]
+        ref1 = ref1.translate(compl)[::-1]
+    
+    return ref1
+    
+def get_ref2(row):
+    if row.trans_order == 1.:
+        subj = genome.loc[row.subj_gn]
+        strand = row.strand_gn
+        sst = row.sst_gn
+        sen = row.sen_gn
+    else:
+        subj = adapter.loc[row.subj_ad]
+        strand = row.strand_ad
+        sst = row.sst_ad
+        sen = row.sen_ad
+    
+    if strand == '+':
+        ref2 = subj.seq[max((sst + int(row.ref2_trim)) - int(row.max_ref_len), 0) : (sst + int(row.ref2_trim))]
+    else:
+        ref2 = subj.seq[(sen - int(row.ref2_trim))                                : (sen - int(row.ref2_trim)) + int(row.max_ref_len)]
+        ref2 = ref2.translate(compl)[::-1]
+    
+    return ref2
 
 def plot_norm_score_distribution(df, title, nbins=50):
     x, y = df.query_seq.str.len(), df.norm_score
@@ -392,37 +434,20 @@ if __name__ == '__main__':
 
     print(" - joining alignment data and filtering for adjacent adapter-genome alignments")
     # determine order of alignments of each read with respect to each adapter-subject pair
-    d = pd.concat([ad_algn_df, gn_algn_df], keys=['ad', 'gn'])
-    for ad_id in adapter.index:
-        for gn_id in genome.index:
-            comb = [ad_id, gn_id]
-            o = d.loc[(d.subj.isin(comb))].sort_values(by=["qid", "qst"], ascending=True)
-            d.loc[o.index, ":".join(comb)] = np.arange(len(o))
-
     d_ad = pd.merge(pd.DataFrame(reads.index, columns=['rid']).set_index('rid', drop=False), 
-                    d.loc[d.index.droplevel(1) == 'ad'].set_index('qid', drop=False),
+                    ad_algn_df.set_index('qid'),
                     how='outer', left_index=True, right_index=True, sort=False)
     df = pd.merge(d_ad, 
-                  d.loc[d.index.droplevel(1) == 'gn'].set_index('qid', drop=False), 
+                  gn_algn_df.set_index('qid'), 
                   how='outer', left_index=True, right_index=True, sort=False, suffixes=('_ad', '_gn'))
     # reset index
     df = df.reset_index(drop=True)
     sel = df.subj_ad.notnull() & \
           df.subj_gn.notnull()
 
-    # determine if the adapter alignment and the genome alignment are adjacent to each other with respect to 
-    # all other alignments of the given read to the same adapter and genome sequence
-    for ad_id in adapter.index:
-        for gn_id in genome.index:
-            sel_ = (df.subj_ad == ad_id) & (df.subj_gn == gn_id)
-            df.loc[sel_, 'align_dist'] = (df[sel_]["{}:{}_ad".format(ad_id, gn_id)] - df[sel_]["{}:{}_gn".format(ad_id, gn_id)]).abs()
     print('{:>11} {:>7} entities after joining'.format(len(df), ""))
     c = sum(np.logical_not(sel))
     print('{:>11} {:>5.1f} % not aligning against both an adapter and a genomic seq'.format(c, c/len(df)*100.))
-    c = sum((df.align_dist > 1.))
-    print('{:>11} {:>5.1f} % are entries are alignments that are not adjacent to each other'.format(c, c/len(df)*100.))
-    sel &= (df.align_dist == 1.)
-    print()
     c = len(set(df.loc[sel, 'rid']))
     print('{:>11} {:>5.1f} % reads remaining that contain potential transitions between adapter and genomic seq.'.format(c, c/len(reads)*100.))
     c = sum(sel)
@@ -435,8 +460,7 @@ if __name__ == '__main__':
                                                        "qlen_gn":np.int32, "qst_gn":np.int32, "qen_gn":np.int32, "slen_gn":np.int32,
                                                        "sst_gn":np.int32, "sen_gn":np.int32, "mlen_gn":np.int32, "blen_gn":np.int32, "mapq_gn":np.int32})
     sel = df.subj_ad.notnull() & \
-          df.subj_gn.notnull() & \
-          (df.align_dist == 1.)
+          df.subj_gn.notnull()
 
     # identify rows describing a transition from adapter to genomic sequence or vise versa
     df.loc[sel,'trans_order'] = 0 # qst_ad == qst_gn
@@ -486,43 +510,10 @@ if __name__ == '__main__':
     print(" - determining query sequences")
     df.loc[sel, 'query_seq'] = df[sel].parallel_apply(lambda row: reads.loc[row.rid].seq[int(row.query_st) : int(row.query_en)], axis=1)
 
-    # determine reference sequences
     print(" - determining reference sequences")
-    #df.loc[sel, 'min_ref_len'] = ((df[sel].query_en - df[sel].query_st) * (1 + args.mean - 3 * args.std) - 0.5).round()
     df.loc[sel, 'max_ref_len'] = ((df[sel].query_en - df[sel].query_st) * (1 + args.mean + 3 * args.std) + 0.5).round()
-
-    # set first and second reference seq
-    sel_ = sel & (df.trans_order == 1.) & (df.strand_ad == '+')
-    df.loc[sel_, 'ref1'] = df[sel_].parallel_apply(
-        lambda row: adapter.loc[row.subj_ad].seq[(row.sen_ad - int(row.ref1_trim)) : (row.sen_ad - int(row.ref1_trim)) + int(row.max_ref_len)], axis=1)
-    sel_ = sel & (df.trans_order == 1.) & (df.strand_ad == '-')
-    df.loc[sel_, 'ref1'] = df[sel_].parallel_apply(
-        lambda row: adapter.loc[row.subj_ad].seq[(row.sst_ad + int(row.ref1_trim)) - int(row.max_ref_len) : (row.sst_ad + int(row.ref1_trim))], axis=1)
-    df.loc[sel_, 'ref1'] = df.loc[sel_, 'ref1'].str.translate(compl).str[::-1] # reverse complement
-
-    sel_ = sel & (df.trans_order == 1.) & (df.strand_gn == '+')
-    df.loc[sel_, 'ref2'] = df[sel_].parallel_apply(
-        lambda row: genome.loc[row.subj_gn].seq[(row.sst_gn + int(row.ref2_trim)) - int(row.max_ref_len) : (row.sst_gn + int(row.ref2_trim))], axis=1)
-    sel_ = sel & (df.trans_order == 1.) & (df.strand_gn == '-')
-    df.loc[sel_, 'ref2'] = df[sel_].parallel_apply(
-        lambda row: genome.loc[row.subj_gn].seq[(row.sen_gn - int(row.ref2_trim)) : (row.sen_gn - int(row.ref2_trim)) + int(row.max_ref_len)], axis=1)
-    df.loc[sel_, 'ref2'] = df.loc[sel_, 'ref2'].str.translate(compl).str[::-1] # reverse complement
-
-    sel_ = sel & (df.trans_order == -1.) & (df.strand_gn == '+')
-    df.loc[sel_, 'ref1'] = df[sel_].parallel_apply(
-        lambda row: genome.loc[row.subj_gn].seq[(row.sen_gn - int(row.ref1_trim)) : (row.sen_gn - int(row.ref1_trim)) + int(row.max_ref_len)], axis=1)
-    sel_ = sel & (df.trans_order == -1.) & (df.strand_gn == '-')
-    df.loc[sel_, 'ref1'] = df[sel_].parallel_apply(
-        lambda row: genome.loc[row.subj_gn].seq[(row.sst_gn + int(row.ref1_trim)) - int(row.max_ref_len) : (row.sst_gn + int(row.ref1_trim))], axis=1)
-    df.loc[sel_, 'ref1'] = df.loc[sel_, 'ref1'].str.translate(compl).str[::-1] # reverse complement
-
-    sel_ = sel & (df.trans_order == -1.) & (df.strand_ad == '+')
-    df.loc[sel_, 'ref2'] = df[sel_].parallel_apply(
-        lambda row: adapter.loc[row.subj_ad].seq[(row.sst_ad + row.ref2_trim) - int(row.max_ref_len) : (row.sst_ad + row.ref2_trim)], axis=1)
-    sel_ = sel & (df.trans_order == -1.) & (df.strand_ad == '-')
-    df.loc[sel_, 'ref2'] = df[sel_].parallel_apply(
-        lambda row: adapter.loc[row.subj_ad].seq[(row.sen_ad - row.ref2_trim) : (row.sen_ad - row.ref2_trim) + int(row.max_ref_len)], axis=1)
-    df.loc[sel_, 'ref2'] = df.loc[sel_, 'ref2'].str.translate(compl).str[::-1] # reverse complement
+    df.loc[sel, 'ref1'] = df.loc[sel].parallel_apply(lambda row: get_ref1(row), axis=1)
+    df.loc[sel, 'ref2'] = df.loc[sel].parallel_apply(lambda row: get_ref2(row), axis=1)
 
     print(' - aligning')
     # initialize the necessary data structures
