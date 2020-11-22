@@ -143,73 +143,95 @@ def parse_paf(fn, cigar=False):
                        dtype=dtype,
                        converters=converters)
 
-def fix_query_st(row):
+def traverse_cg(trimmed_query, trimmed_subject, bases, op):
+    if op == "=" and bases >= args.wordsize:
+        return trimmed_query, trimmed_subject
+    if op == "=" or op == 'X':
+        trimmed_query += bases
+        trimmed_subject += bases
+    elif op == 'I':
+        trimmed_query += bases
+    elif op == 'D':
+        trimmed_subject += bases
+    else:
+        print('ERROR: unknown CIGAR Operation:', op)
+        exit(1)
+    return trimmed_query, trimmed_subject
+
+def traverse_cg_forwards(cg):
     trimmed_query = 0
     trimmed_subject = 0
+    for m in re.finditer(cg_pat, cg):
+        trimmed_query, trimmed_subject = traverse_cg(trimmed_query, trimmed_subject, int(m.group(1)), m.group(2))
+    else:
+        return np.nan, np.nan
+
+def traverse_cg_backwards(cg):
+    trimmed_query = 0
+    trimmed_subject = 0
+    cg_list = re.findall(cg_pat, cg)
+    for bases,op in reversed(cg_list):
+        trimmed_query, trimmed_subject = traverse_cg(trimmed_query, trimmed_subject, int(bases), op)
+    else:
+        return np.nan, np.nan
+
+def fix_query_st(row):
     if row.trans_order == 1.:
         cg = row.cg_ad
         qen = row.qen_ad
+        strand = row.strand_ad
     else:
         cg = row.cg_gn
         qen = row.qen_gn
-    cg_list = re.findall(cg_pat, cg)
-    for bases,op in reversed(cg_list):
-        bases = int(bases)
-        if op == "=" and bases >= args.wordsize:
+        strand = row.strand_gn
+
+    if strand == '+':
+        trimmed_query, trimmed_subject = traverse_cg_backwards(cg)
+        if trimmed_query:
             return qen - trimmed_query, trimmed_subject
-            break
-        if op == "=" or op == 'X':
-            trimmed_query += bases
-            trimmed_subject += bases
-        elif op == 'I':
-            trimmed_query += bases
-        else: # == D
-            trimmed_subject += bases
+    else:
+        trimmed_query, trimmed_subject = traverse_cg_forwards(cg)
+        if trimmed_query:
+            return qen - trimmed_query, trimmed_subject
     # unsuccessful
     return np.nan, np.nan
 
 def fix_query_en(row):
-    trimmed_query = 0
-    trimmed_subject = 0
     if row.trans_order == 1.:
         cg = row.cg_gn
         qst = row.qst_gn
+        strand = row.strand_gn
     else:
         cg = row.cg_ad
         qst = row.qst_ad
-    for m in re.finditer(cg_pat, cg):
-        bases, op = int(m.group(1)), m.group(2)
-        if op == "=" and bases >= args.wordsize:
+        strand = row.strand_ad
+
+    if strand == '+':
+        trimmed_query, trimmed_subject = traverse_cg_forwards(cg)
+        if trimmed_query:
             return qst + trimmed_query, trimmed_subject
-            break
-        if op == "=" or op == 'X':
-            trimmed_query += bases
-            trimmed_subject += bases
-        elif op == 'I':
-            trimmed_query += bases
-        else: # == D
-            trimmed_subject += bases
+    else:
+        trimmed_query, trimmed_subject = traverse_cg_backwards(cg)
+        if trimmed_query:
+            return qst + trimmed_query, trimmed_subject
     # unsuccessful
     return np.nan, np.nan
 
 def get_query_seq(df, sel, fix=True):
     df['ref1_trim'], df['ref2_trim'] = 0, 0
-    
     cg_ad = df.cg_ad.str.replace('D|I', 'X')
     cg_gn = df.cg_gn.str.replace('D|I', 'X')
-    
-    sel_ = sel & (df.trans_order == 1.) & (cg_ad.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize) # & (df.strand_ad == '+')
-    df.loc[sel_ , 'query_st'] = df[sel_].qen_ad
-    sel_ = sel & (df.trans_order == 1.) & (cg_gn.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize) # & (df.strand_ad == '+')
-    df.loc[sel_ , 'query_en'] = df[sel_].qst_gn
-    
-    sel_ = sel & (df.trans_order == -1.) & (cg_gn.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize) # & (df.strand_ad == '+') 
-    df.loc[sel_ , 'query_st'] = df[sel_].qen_gn
-    sel_ = sel & (df.trans_order == -1.) & (cg_ad.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize) # & (df.strand_ad == '+')
-    df.loc[sel_ , 'query_en'] = df[sel_].qst_ad
-    
+    # set query start and end for easy cases
+    for trans_order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, qen, qst in [( 1., df.strand_ad, df.strand_gn, cg_ad, cg_gn, df.qen_ad, df.qst_gn),
+                                                                              (-1., df.strand_gn, df.strand_ad, cg_gn, cg_ad, df.qen_gn, df.qst_ad)]:
+        sel_ = ((strand_ref1 == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize)) | \
+               ((strand_ref1 == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize))
+        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_st'] = qen[sel & (df.trans_order == trans_order) & sel_]
+        sel_ = ((strand_ref2 == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize)) | \
+               ((strand_ref2 == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize))
+        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_en'] = qst[sel & (df.trans_order == trans_order) & sel_]
+    # for query start and end for harder cases
     if fix:
-        # fix query end & start of reads with insufficient terminal alignments
         df.loc[sel & df.query_st.isnull(), ['query_st', 'ref1_trim']] = pd.DataFrame(
             df.loc[sel & df.query_st.isnull()].apply(lambda row: fix_query_st(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_st.isnull()].index, columns=['query_st', 'ref1_trim']
@@ -218,7 +240,6 @@ def get_query_seq(df, sel, fix=True):
             df.loc[sel & df.query_en.isnull()].apply(lambda row: fix_query_en(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_en.isnull()].index, columns=['query_en', 'ref2_trim']
         )
-    
     sel_ = sel & df.query_st.notnull()
     df.loc[sel, 'query_st'] -= args.strip
     df.loc[sel, 'ref1_trim'] += args.strip

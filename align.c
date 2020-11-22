@@ -21,60 +21,76 @@ void init() {
 		MATCH[n][67] = true; // C
 		MATCH[n][71] = true; // G
 		MATCH[n][84] = true; // T
+		MATCH[n][85] = true; // U
 		MATCH[n][65+32] = true; // a
 		MATCH[n][67+32] = true; // c
 		MATCH[n][71+32] = true; // g
 		MATCH[n][84+32] = true; // t
+		MATCH[n][85+32] = true; // u
 		MATCH[65][n] = true; // A
 		MATCH[67][n] = true; // C
 		MATCH[71][n] = true; // G
 		MATCH[84][n] = true; // T
+		MATCH[85][n] = true; // U
 		MATCH[65+32][n] = true; // a
 		MATCH[67+32][n] = true; // c
 		MATCH[71+32][n] = true; // g
 		MATCH[84+32][n] = true; // t
+		MATCH[85+32][n] = true; // u
 	}
 	for (int b=66; b<=66+32; b+=32) {
 		MATCH[b][67] = true; // C
 		MATCH[b][71] = true; // G
 		MATCH[b][84] = true; // T
+		MATCH[b][85] = true; // U
 		MATCH[b][67+32] = true; // c
 		MATCH[b][71+32] = true; // g
 		MATCH[b][84+32] = true; // t
+		MATCH[b][85+32] = true; // u
 		MATCH[67][b] = true; // C
 		MATCH[71][b] = true; // G
 		MATCH[84][b] = true; // T
+		MATCH[85][b] = true; // U
 		MATCH[67+32][b] = true; // c
 		MATCH[71+32][b] = true; // g
 		MATCH[84+32][b] = true; // t
+		MATCH[85+32][b] = true; // u
 	}
 	for (int d=68; d<=68+32; d+=32) {
 		MATCH[d][65] = true; // A
 		MATCH[d][71] = true; // G
 		MATCH[d][84] = true; // T
+		MATCH[d][85] = true; // U
 		MATCH[d][65+32] = true; // a
 		MATCH[d][71+32] = true; // g
 		MATCH[d][84+32] = true; // t
+		MATCH[d][85+32] = true; // u
 		MATCH[65][d] = true; // A
 		MATCH[71][d] = true; // G
 		MATCH[84][d] = true; // T
+		MATCH[85][d] = true; // U
 		MATCH[65+32][d] = true; // a
 		MATCH[71+32][d] = true; // g
 		MATCH[84+32][d] = true; // t
+		MATCH[85+32][d] = true; // u
 	}
 	for (int h=72; h<=72+32; h+=32) {
 		MATCH[h][65] = true; // A
 		MATCH[h][67] = true; // C
 		MATCH[h][84] = true; // T
+		MATCH[h][85] = true; // U
 		MATCH[h][65+32] = true; // a
 		MATCH[h][67+32] = true; // c
 		MATCH[h][84+32] = true; // t
+		MATCH[h][85+32] = true; // u
 		MATCH[65][h] = true; // A
 		MATCH[67][h] = true; // C
 		MATCH[84][h] = true; // T
+		MATCH[85][h] = true; // U
 		MATCH[65+32][h] = true; // a
 		MATCH[67+32][h] = true; // c
 		MATCH[84+32][h] = true; // t
+		MATCH[85+32][h] = true; // u
 	}
 	for (int v=86; v<=86+32; v+=32) {
 		MATCH[v][65] = true; // A
@@ -93,12 +109,16 @@ void init() {
 	for (int k=75; k<=75+32; k+=32) {
 		MATCH[k][71] = true; // G
 		MATCH[k][84] = true; // T
+		MATCH[k][85] = true; // U
 		MATCH[k][71+32] = true; // g
 		MATCH[k][84+32] = true; // t
+		MATCH[k][85+32] = true; // u
 		MATCH[71][k] = true; // G
 		MATCH[84][k] = true; // T
+		MATCH[85][k] = true; // U
 		MATCH[71+32][k] = true; // g
 		MATCH[84+32][k] = true; // t
+		MATCH[85+32][k] = true; // u
 	}
 	for (int m=77; m<=77+32; m+=32) {
 		MATCH[m][65] = true; // A
@@ -133,22 +153,30 @@ void init() {
 	for (int w=87; w<=87+32; w+=32) {
 		MATCH[w][65] = true; // A
 		MATCH[w][84] = true; // T
+		MATCH[w][85] = true; // U
 		MATCH[w][65+32] = true; // a
 		MATCH[w][84+32] = true; // t
+		MATCH[w][85+32] = true; // u
 		MATCH[65][w] = true; // A
 		MATCH[84][w] = true; // T
+		MATCH[85][w] = true; // U
 		MATCH[65+32][w] = true; // a
 		MATCH[84+32][w] = true; // t
+		MATCH[85+32][w] = true; // u
 	}
 	for (int y=89; y<=89+32; y+=32) {
 		MATCH[y][67] = true; // C
 		MATCH[y][84] = true; // T
+		MATCH[y][85] = true; // U
 		MATCH[y][67+32] = true; // c
 		MATCH[y][84+32] = true; // t
+		MATCH[y][85+32] = true; // u
 		MATCH[67][y] = true; // C
 		MATCH[84][y] = true; // T
+		MATCH[85][y] = true; // U
 		MATCH[67+32][y] = true; // c
 		MATCH[84+32][y] = true; // t
+		MATCH[85+32][y] = true; // u
 	}
 }
 
