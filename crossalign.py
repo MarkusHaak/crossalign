@@ -105,11 +105,11 @@ def get_args(args=None):
     filter_group.add_argument('--min_adapter_blen',
                               help="min produced alignment length (including errors)",
                               type=int,
-                              default=50)
+                              default=1)
     filter_group.add_argument('--min_genome_blen',
                               help="min produced alignment length (including errors)",
                               type=int,
-                              default=50)
+                              default=1)
 
     help_group = parser.add_argument_group('Help')
     help_group.add_argument('-h', '--help', 
@@ -222,22 +222,27 @@ def get_query_seq(df, sel, fix=True):
     cg_ad = df.cg_ad.str.replace('D|I', 'X')
     cg_gn = df.cg_gn.str.replace('D|I', 'X')
     # set query start and end for easy cases
-    for trans_order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, qen, qst in [( 1., df.strand_ad, df.strand_gn, cg_ad, cg_gn, df.qen_ad, df.qst_gn),
-                                                                              (-1., df.strand_gn, df.strand_ad, cg_gn, cg_ad, df.qen_gn, df.qst_ad)]:
-        sel_ = ((strand_ref1 == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize)) | \
-               ((strand_ref1 == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize))
-        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_st'] = qen[sel & (df.trans_order == trans_order) & sel_]
-        sel_ = ((strand_ref2 == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize)) | \
-               ((strand_ref2 == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize))
-        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_en'] = qst[sel & (df.trans_order == trans_order) & sel_]
+    for trans_order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, qen, qst in [( 1., 'strand_ad', 'strand_gn', cg_ad, cg_gn, 'qen_ad', 'qst_gn'),
+                                                                              (-1., 'strand_gn', 'strand_ad', cg_gn, cg_ad, 'qen_gn', 'qst_ad')]:
+        sel_ = ((df[strand_ref1] == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize)) | \
+               ((df[strand_ref1] == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize))
+        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_st'] = df.loc[sel & (df.trans_order == trans_order) & sel_, qen]
+        print("set", trans_order, "query_st")
+        sel_ = ((df[strand_ref2] == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize)) | \
+               ((df[strand_ref2] == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize))
+        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_en'] = df.loc[sel & (df.trans_order == trans_order) & sel_, qst]
+        print("set", trans_order, "query_en")
+    
     # for query start and end for harder cases
     if fix:
+        print('need to fix', sum(sel & df.query_st.isnull()), 'query starts')
         df.loc[sel & df.query_st.isnull(), ['query_st', 'ref1_trim']] = pd.DataFrame(
-            df.loc[sel & df.query_st.isnull()].apply(lambda row: fix_query_st(row), axis=1).values.tolist(), 
+            df.loc[sel & df.query_st.isnull()].parallel_apply(lambda row: fix_query_st(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_st.isnull()].index, columns=['query_st', 'ref1_trim']
         )
+        print('need to fix', sum(sel & df.query_en.isnull()), 'query starts')
         df.loc[sel & df.query_en.isnull(), ['query_en', 'ref2_trim']] = pd.DataFrame(
-            df.loc[sel & df.query_en.isnull()].apply(lambda row: fix_query_en(row), axis=1).values.tolist(), 
+            df.loc[sel & df.query_en.isnull()].parallel_apply(lambda row: fix_query_en(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_en.isnull()].index, columns=['query_en', 'ref2_trim']
         )
     sel_ = sel & df.query_st.notnull()

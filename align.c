@@ -6,9 +6,9 @@
 
 #define MAX_REC_DEPTH 300
 
-bool MATCH[123][123] = {false};
+bool MATCH[123][123] = {{false}};
 
-void init() {
+void init(bool nucl) {
 	for (int i=0; i<=122; i++) {
 		MATCH[i][i] = true;
 	}
@@ -16,172 +16,193 @@ void init() {
 		MATCH[i][i+32] = true;
 		MATCH[i+32][i] = true;
 	}
-	for (int n=78; n<=78+32; n+=32) {
-		MATCH[n][65] = true; // A
-		MATCH[n][67] = true; // C
-		MATCH[n][71] = true; // G
-		MATCH[n][84] = true; // T
-		MATCH[n][85] = true; // U
-		MATCH[n][65+32] = true; // a
-		MATCH[n][67+32] = true; // c
-		MATCH[n][71+32] = true; // g
-		MATCH[n][84+32] = true; // t
-		MATCH[n][85+32] = true; // u
-		MATCH[65][n] = true; // A
-		MATCH[67][n] = true; // C
-		MATCH[71][n] = true; // G
-		MATCH[84][n] = true; // T
-		MATCH[85][n] = true; // U
-		MATCH[65+32][n] = true; // a
-		MATCH[67+32][n] = true; // c
-		MATCH[71+32][n] = true; // g
-		MATCH[84+32][n] = true; // t
-		MATCH[85+32][n] = true; // u
-	}
-	for (int b=66; b<=66+32; b+=32) {
-		MATCH[b][67] = true; // C
-		MATCH[b][71] = true; // G
-		MATCH[b][84] = true; // T
-		MATCH[b][85] = true; // U
-		MATCH[b][67+32] = true; // c
-		MATCH[b][71+32] = true; // g
-		MATCH[b][84+32] = true; // t
-		MATCH[b][85+32] = true; // u
-		MATCH[67][b] = true; // C
-		MATCH[71][b] = true; // G
-		MATCH[84][b] = true; // T
-		MATCH[85][b] = true; // U
-		MATCH[67+32][b] = true; // c
-		MATCH[71+32][b] = true; // g
-		MATCH[84+32][b] = true; // t
-		MATCH[85+32][b] = true; // u
-	}
-	for (int d=68; d<=68+32; d+=32) {
-		MATCH[d][65] = true; // A
-		MATCH[d][71] = true; // G
-		MATCH[d][84] = true; // T
-		MATCH[d][85] = true; // U
-		MATCH[d][65+32] = true; // a
-		MATCH[d][71+32] = true; // g
-		MATCH[d][84+32] = true; // t
-		MATCH[d][85+32] = true; // u
-		MATCH[65][d] = true; // A
-		MATCH[71][d] = true; // G
-		MATCH[84][d] = true; // T
-		MATCH[85][d] = true; // U
-		MATCH[65+32][d] = true; // a
-		MATCH[71+32][d] = true; // g
-		MATCH[84+32][d] = true; // t
-		MATCH[85+32][d] = true; // u
-	}
-	for (int h=72; h<=72+32; h+=32) {
-		MATCH[h][65] = true; // A
-		MATCH[h][67] = true; // C
-		MATCH[h][84] = true; // T
-		MATCH[h][85] = true; // U
-		MATCH[h][65+32] = true; // a
-		MATCH[h][67+32] = true; // c
-		MATCH[h][84+32] = true; // t
-		MATCH[h][85+32] = true; // u
-		MATCH[65][h] = true; // A
-		MATCH[67][h] = true; // C
-		MATCH[84][h] = true; // T
-		MATCH[85][h] = true; // U
-		MATCH[65+32][h] = true; // a
-		MATCH[67+32][h] = true; // c
-		MATCH[84+32][h] = true; // t
-		MATCH[85+32][h] = true; // u
-	}
-	for (int v=86; v<=86+32; v+=32) {
-		MATCH[v][65] = true; // A
-		MATCH[v][67] = true; // C
-		MATCH[v][71] = true; // G
-		MATCH[v][65+32] = true; // a
-		MATCH[v][67+32] = true; // c
-		MATCH[v][71+32] = true; // g
-		MATCH[65][v] = true; // A
-		MATCH[67][v] = true; // C
-		MATCH[71][v] = true; // G
-		MATCH[65+32][v] = true; // a
-		MATCH[67+32][v] = true; // c
-		MATCH[71+32][v] = true; // g
-	}
-	for (int k=75; k<=75+32; k+=32) {
-		MATCH[k][71] = true; // G
-		MATCH[k][84] = true; // T
-		MATCH[k][85] = true; // U
-		MATCH[k][71+32] = true; // g
-		MATCH[k][84+32] = true; // t
-		MATCH[k][85+32] = true; // u
-		MATCH[71][k] = true; // G
-		MATCH[84][k] = true; // T
-		MATCH[85][k] = true; // U
-		MATCH[71+32][k] = true; // g
-		MATCH[84+32][k] = true; // t
-		MATCH[85+32][k] = true; // u
-	}
-	for (int m=77; m<=77+32; m+=32) {
-		MATCH[m][65] = true; // A
-		MATCH[m][67] = true; // C
-		MATCH[m][65+32] = true; // a
-		MATCH[m][67+32] = true; // c
-		MATCH[65][m] = true; // A
-		MATCH[67][m] = true; // C
-		MATCH[65+32][m] = true; // a
-		MATCH[67+32][m] = true; // c
-	}
-	for (int r=82; r<=82+32; r+=32) {
-		MATCH[r][65] = true; // A
-		MATCH[r][71] = true; // G
-		MATCH[r][65+32] = true; // a
-		MATCH[r][71+32] = true; // g
-		MATCH[65][r] = true; // A
-		MATCH[71][r] = true; // G
-		MATCH[65+32][r] = true; // a
-		MATCH[71+32][r] = true; // g
-	}
-	for (int s=83; s<=83+32; s+=32) {
-		MATCH[s][67] = true; // C
-		MATCH[s][71] = true; // G
-		MATCH[s][67+32] = true; // c
-		MATCH[s][71+32] = true; // g
-		MATCH[67][s] = true; // C
-		MATCH[71][s] = true; // G
-		MATCH[67+32][s] = true; // c
-		MATCH[71+32][s] = true; // g
-	}
-	for (int w=87; w<=87+32; w+=32) {
-		MATCH[w][65] = true; // A
-		MATCH[w][84] = true; // T
-		MATCH[w][85] = true; // U
-		MATCH[w][65+32] = true; // a
-		MATCH[w][84+32] = true; // t
-		MATCH[w][85+32] = true; // u
-		MATCH[65][w] = true; // A
-		MATCH[84][w] = true; // T
-		MATCH[85][w] = true; // U
-		MATCH[65+32][w] = true; // a
-		MATCH[84+32][w] = true; // t
-		MATCH[85+32][w] = true; // u
-	}
-	for (int y=89; y<=89+32; y+=32) {
-		MATCH[y][67] = true; // C
-		MATCH[y][84] = true; // T
-		MATCH[y][85] = true; // U
-		MATCH[y][67+32] = true; // c
-		MATCH[y][84+32] = true; // t
-		MATCH[y][85+32] = true; // u
-		MATCH[67][y] = true; // C
-		MATCH[84][y] = true; // T
-		MATCH[85][y] = true; // U
-		MATCH[67+32][y] = true; // c
-		MATCH[84+32][y] = true; // t
-		MATCH[85+32][y] = true; // u
+	if (nucl == true) {
+		for (int u=85; u<=85+32; u+=32) {
+			MATCH[u][84] = true; // T
+			MATCH[u][84+32] = true; // t
+			MATCH[84][u] = true; // T
+			MATCH[84+32][u] = true; // t
+		}
+		for (int n=78; n<=78+32; n+=32) {
+			MATCH[n][65] = true; // A
+			MATCH[n][67] = true; // C
+			MATCH[n][71] = true; // G
+			MATCH[n][84] = true; // T
+			MATCH[n][85] = true; // U
+			MATCH[n][65+32] = true; // a
+			MATCH[n][67+32] = true; // c
+			MATCH[n][71+32] = true; // g
+			MATCH[n][84+32] = true; // t
+			MATCH[n][85+32] = true; // u
+			MATCH[65][n] = true; // A
+			MATCH[67][n] = true; // C
+			MATCH[71][n] = true; // G
+			MATCH[84][n] = true; // T
+			MATCH[85][n] = true; // U
+			MATCH[65+32][n] = true; // a
+			MATCH[67+32][n] = true; // c
+			MATCH[71+32][n] = true; // g
+			MATCH[84+32][n] = true; // t
+			MATCH[85+32][n] = true; // u
+		}
+		for (int b=66; b<=66+32; b+=32) {
+			MATCH[b][67] = true; // C
+			MATCH[b][71] = true; // G
+			MATCH[b][84] = true; // T
+			MATCH[b][85] = true; // U
+			MATCH[b][67+32] = true; // c
+			MATCH[b][71+32] = true; // g
+			MATCH[b][84+32] = true; // t
+			MATCH[b][85+32] = true; // u
+			MATCH[67][b] = true; // C
+			MATCH[71][b] = true; // G
+			MATCH[84][b] = true; // T
+			MATCH[85][b] = true; // U
+			MATCH[67+32][b] = true; // c
+			MATCH[71+32][b] = true; // g
+			MATCH[84+32][b] = true; // t
+			MATCH[85+32][b] = true; // u
+		}
+		for (int d=68; d<=68+32; d+=32) {
+			MATCH[d][65] = true; // A
+			MATCH[d][71] = true; // G
+			MATCH[d][84] = true; // T
+			MATCH[d][85] = true; // U
+			MATCH[d][65+32] = true; // a
+			MATCH[d][71+32] = true; // g
+			MATCH[d][84+32] = true; // t
+			MATCH[d][85+32] = true; // u
+			MATCH[65][d] = true; // A
+			MATCH[71][d] = true; // G
+			MATCH[84][d] = true; // T
+			MATCH[85][d] = true; // U
+			MATCH[65+32][d] = true; // a
+			MATCH[71+32][d] = true; // g
+			MATCH[84+32][d] = true; // t
+			MATCH[85+32][d] = true; // u
+		}
+		for (int h=72; h<=72+32; h+=32) {
+			MATCH[h][65] = true; // A
+			MATCH[h][67] = true; // C
+			MATCH[h][84] = true; // T
+			MATCH[h][85] = true; // U
+			MATCH[h][65+32] = true; // a
+			MATCH[h][67+32] = true; // c
+			MATCH[h][84+32] = true; // t
+			MATCH[h][85+32] = true; // u
+			MATCH[65][h] = true; // A
+			MATCH[67][h] = true; // C
+			MATCH[84][h] = true; // T
+			MATCH[85][h] = true; // U
+			MATCH[65+32][h] = true; // a
+			MATCH[67+32][h] = true; // c
+			MATCH[84+32][h] = true; // t
+			MATCH[85+32][h] = true; // u
+		}
+		for (int v=86; v<=86+32; v+=32) {
+			MATCH[v][65] = true; // A
+			MATCH[v][67] = true; // C
+			MATCH[v][71] = true; // G
+			MATCH[v][65+32] = true; // a
+			MATCH[v][67+32] = true; // c
+			MATCH[v][71+32] = true; // g
+			MATCH[65][v] = true; // A
+			MATCH[67][v] = true; // C
+			MATCH[71][v] = true; // G
+			MATCH[65+32][v] = true; // a
+			MATCH[67+32][v] = true; // c
+			MATCH[71+32][v] = true; // g
+		}
+		for (int k=75; k<=75+32; k+=32) {
+			MATCH[k][71] = true; // G
+			MATCH[k][84] = true; // T
+			MATCH[k][85] = true; // U
+			MATCH[k][71+32] = true; // g
+			MATCH[k][84+32] = true; // t
+			MATCH[k][85+32] = true; // u
+			MATCH[71][k] = true; // G
+			MATCH[84][k] = true; // T
+			MATCH[85][k] = true; // U
+			MATCH[71+32][k] = true; // g
+			MATCH[84+32][k] = true; // t
+			MATCH[85+32][k] = true; // u
+		}
+		for (int m=77; m<=77+32; m+=32) {
+			MATCH[m][65] = true; // A
+			MATCH[m][67] = true; // C
+			MATCH[m][65+32] = true; // a
+			MATCH[m][67+32] = true; // c
+			MATCH[65][m] = true; // A
+			MATCH[67][m] = true; // C
+			MATCH[65+32][m] = true; // a
+			MATCH[67+32][m] = true; // c
+		}
+		for (int r=82; r<=82+32; r+=32) {
+			MATCH[r][65] = true; // A
+			MATCH[r][71] = true; // G
+			MATCH[r][65+32] = true; // a
+			MATCH[r][71+32] = true; // g
+			MATCH[65][r] = true; // A
+			MATCH[71][r] = true; // G
+			MATCH[65+32][r] = true; // a
+			MATCH[71+32][r] = true; // g
+		}
+		for (int s=83; s<=83+32; s+=32) {
+			MATCH[s][67] = true; // C
+			MATCH[s][71] = true; // G
+			MATCH[s][67+32] = true; // c
+			MATCH[s][71+32] = true; // g
+			MATCH[67][s] = true; // C
+			MATCH[71][s] = true; // G
+			MATCH[67+32][s] = true; // c
+			MATCH[71+32][s] = true; // g
+		}
+		for (int w=87; w<=87+32; w+=32) {
+			MATCH[w][65] = true; // A
+			MATCH[w][84] = true; // T
+			MATCH[w][85] = true; // U
+			MATCH[w][65+32] = true; // a
+			MATCH[w][84+32] = true; // t
+			MATCH[w][85+32] = true; // u
+			MATCH[65][w] = true; // A
+			MATCH[84][w] = true; // T
+			MATCH[85][w] = true; // U
+			MATCH[65+32][w] = true; // a
+			MATCH[84+32][w] = true; // t
+			MATCH[85+32][w] = true; // u
+		}
+		for (int y=89; y<=89+32; y+=32) {
+			MATCH[y][67] = true; // C
+			MATCH[y][84] = true; // T
+			MATCH[y][85] = true; // U
+			MATCH[y][67+32] = true; // c
+			MATCH[y][84+32] = true; // t
+			MATCH[y][85+32] = true; // u
+			MATCH[67][y] = true; // C
+			MATCH[84][y] = true; // T
+			MATCH[85][y] = true; // U
+			MATCH[67+32][y] = true; // c
+			MATCH[84+32][y] = true; // t
+			MATCH[85+32][y] = true; // u
+		}
 	}
 }
 
+void strrev(char *head){
+	// credits to Anders Eurenius, https://stackoverflow.com/questions/198199
+    if (!head) return;
+    char *tail = head;
+    while(*tail) ++tail;
+    --tail;
+    for( ; head < tail; ++head, --tail) {
+        char h = *head, t = *tail;
+        *head = t;
+        *tail = h;
+  }
+}
+
 bool
-matches(char a, char b)
+matches(unsigned char a, unsigned char b)
 {	
 	if (MATCH[a][b] == true) {
 		printf("True\n");
@@ -192,40 +213,220 @@ matches(char a, char b)
 	return MATCH[a][b];
 }
 
-int backtrace2(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
-			   const int16_t qlen, const int16_t s1len, const int16_t s2len,
-			   bool** transitions) {
-	bool reachable[s2len][qlen+1];
-	if (s2len > 0) {
-		for (int i=0; i<s2len; i++) {
-			for (int j=0; j<=qlen; j++) {
-				reachable[i][j] = false;
+int get_cigar(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
+		      const int16_t qlen, const int16_t s1len, const int16_t s2len,
+	          bool** reachable, const int16_t s1fna, const int16_t s2fa, const int16_t qts, const int16_t qte, char* cigar) {
+	int i, j, blen;
+	blen = 0; // total length of cigar string
+	// cigar of alignment against s1
+	for (i=s1fna, j=qts; i!=0 || j!=0; ) {
+		// prioritizes matches near transition point
+		if (match[i][j] == true) {
+			cigar[blen++] = '=';
+			i--;
+			j--;
+			continue;
+		}
+		if (mmatch[i][j] == true) {
+			cigar[blen++] = 'X';
+			i--;
+			j--;
+			continue;
+		}
+		if (del[i][j] == true) {
+			cigar[blen++] = 'D';
+			i--;
+			continue;
+		}
+		if (ins[i][j] == true) {
+			cigar[blen++] = 'I';
+			j--;
+			continue;
+		}
+		printf("(%d %d) ref1: no way to go!\n", i, j);
+		return -1;
+	}
+	cigar[blen] = '\0';
+	strrev(cigar);
+
+	// add Insertions between aligning parts
+	for (i=qte-qts; i>0; i--) {
+		cigar[blen++] = 'I';
+	}
+
+	// cigar of alignment against s2
+	for (i=s1len+s2fa, j=qte; i!=s1len+s2len || j!=qlen; ) {
+		// prioritizes matches near transition point
+		if (i < s1len+s2len && j < qlen) {
+			if (reachable[i+1][j+1] == true) {
+				if (match[i+1][j+1] == true) {
+					cigar[blen++] = '=';
+					i++;
+					j++;
+					continue;
+				}
+				if (mmatch[i+1][j+1] == true) {
+					cigar[blen++] = 'X';
+					i++;
+					j++;
+					continue;
+				}
 			}
 		}
-		reachable[s2len-1][qlen] = true;
-		for (int i=s2len-1; i>=0; i--) {
-			for (int j=qlen; j>=0; j--) {
+		if (i < s1len+s2len) {
+			if (reachable[i+1][j] == true && del[i+1][j] == true) {
+				cigar[blen++] = 'D';
+				i++;
+				continue;
+			}
+		}
+		if (j < qlen) {
+			if (reachable[i][j+1] == true && ins[i][j+1] == true) {
+				cigar[blen++] = 'I';
+				j++;
+				continue;
+			}
+		}
+		printf("(%d %d) ref2: no way to go!\n", i, j);
+		return -1;
+	}
+	cigar[blen] = '\0';
+	return 0;
+}
+
+int get_transitions(const bool** ins, const int16_t qlen, const int16_t s1len, const int16_t s2len, bool** align_ends_s1, 
+				    bool** align_ends_s2, bool** reachable, int16_t** transitions_s1, int16_t** transitions_s2){
+	int i, jstart, jend, k;
+	for (i=0; i<=s1len; i++) {
+		for (int k=0; k<=s2len; k++) {
+			transitions_s1[i][k] = -1;
+		}
+	}
+	for (jend=qlen; jend>=0; jend--) {
+		if (reachable[s1len][jend] == false) continue;
+		for (k=0; k<=s2len; k++) {
+			if (align_ends_s2[k][jend] == false) continue;
+			for (jstart=jend; jstart>=0; jstart--) {
+				for (i=0; i<=s1len; i++) {
+					if(align_ends_s1[i][jstart]) {
+						transitions_s1[i][k] = jstart;
+						transitions_s2[i][k] = jend;
+					}
+				}
+				if (ins[s1len][jstart] == false) break;
+			}
+		}
+	}
+	return 0;
+}
+
+int backtrace(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
+			  const int16_t qlen, const int16_t s1len, const int16_t s2len,
+			  bool** align_ends_s1, bool** align_ends_s2, bool** reachable) {
+	int i, j;
+	for (i=0; i<=s1len; i++) {
+		for (int j=0; j<=qlen; j++) {
+			align_ends_s1[i][j] = false;
+		}
+	}
+	for (i=0; i<=s2len; i++) {
+		for (int j=0; j<=qlen; j++) {
+			align_ends_s2[i][j] = false;
+		}
+	}
+	for (i=s1len; i<=s1len+s2len; i++) {
+		for (j=0; j<=qlen; j++) {
+			reachable[i][j] = false;
+		}
+	}
+	// determine which bases between query and subject s2 can be reached / are aligning when tracing back alignments producing a top score
+	// the resulting array, "reachable", is reused for determining a CIGAR string for all possible alignments
+	// the row at the transition, j=s1len, is processed after determining 
+	reachable[s1len+s2len][qlen] = true;
+	for (i=s1len+s2len; i>s1len; i--) {
+		for (j=qlen; j>=0; j--) {
+			if (reachable[i][j] == true) {
+				if (ins[i][j] == true) reachable[i][j-1] = true;
+				if (del[i][j] == true) reachable[i-1][j] = true;
+				if (match[i][j] == true || mmatch[i][j] == true) reachable[i-1][j-1] = true;
+			}
+		}
+	}
+	// determine the alignment endpoints for subject s2. These are stored in the boolean array align_ends_s2, where 
+	// a true value at index (i,j) indicates that there exists a global alignment of the query sequence against the
+	// two subject sequences with the alignment against subject s2 starting with query base j aligning against s2 base i
+	// that is not an insertion
+	if (s2len == 0) {
+		align_ends_s2[s2len][qlen] = true;
+	}
+	else {
+		// in the row i=s1len+s2len, the only position that is reachable without an insertion is at j=qlen
+		if (gst[s1len+s2len][qlen] == true) {
+			align_ends_s2[s2len][qlen] = true;
+			reachable[s1len][qlen] = true;
+		}
+		for (j=qlen; j>=0; j--) {
+			for (i=s1len; i<s1len+s2len; i++) {
 				if (reachable[i][j] == true) {
-					if (ins[i+s1len+1][j] == true) reachable[i][j-1] = true;
-					if (i > 0) {
-						if (del[i+s1len+1][j] == true) reachable[i-1][j] = true;
-						if (match[i+s1len+1][j] == true || mmatch[i+s1len+1][j] == true) reachable[i-1][j-1] = true;
+					// check if its possible to trace back to (i,j) without the last step being an insertion
+					if (j == qlen) {
+						if (del[i+1][j] == true && reachable[i+1][j] == true) {
+							if (i == s1len) {
+								align_ends_s2[0][j] = true;
+								reachable[s1len][j] = true;
+							}
+							else if (gst[i][j] == true) {
+								align_ends_s2[i-s1len][j] = true;
+								reachable[s1len][j] = true;
+							}
+						}
+					}
+					else if (((match[i+1][j+1] == true || mmatch[i+1][j+1] == true) && reachable[i+1][j+1] == true) || 
+						     (del[i+1][j] == true && reachable[i+1][j] == true)) {
+						if (i == s1len) {
+							align_ends_s2[0][j] = true;
+							reachable[s1len][j] = true;
+						}
+						else if (gst[i][j] == true) {
+							align_ends_s2[i-s1len][j] = true;
+							reachable[s1len][j] = true;
+						}
 					}
 				}
 			}
 		}
-
-		for (int i=s1len+1; i<=s1len+s2len; i++) {
-			for (int j=0; j<=qlen; j++) {
-				if (reachable[i-s1len-1][j] == true) {
-					if (i == s1len+1) {
-						if (match[i][j] == true || mmatch[i][j] == true || del[i][j] == true) transitions[s1len-1][i-s1len] = true;
-					}
-					if (gst[i][j] == true) {
-						if (match[s1len][j] == true || mmatch[s1len][j] == true || del[s1len][j] == true || ins[s1len][j] == true) transitions[s1len][i-s1len] = true;
-						for (int k=s1len-1; k >= 0; k--) {
-							if (gen[k][j] == true) {
-								transitions[k][i-s1len] = true;
+	}
+	// determine if there are inserted bases in the query sequence between the alignments against the two subject sequences
+	for (j=qlen; j>0; j--) {
+		if (reachable[s1len][j] == true && ins[s1len][j] == true) {
+			reachable[s1len][j-1] = true;
+		} 
+	}
+	// determine the alignment endpoints for subject s1. These are stored in the boolean array align_ends_s1, where 
+	// a true value at index (i,j) indicates that there exists a global alignment of the query sequence against the
+	// two subject sequences with the alignment against subject s1 ending with query base (j-1) aligning against s2 base (i-1)
+	// that is not an insertion
+	if (s1len == 0) {
+		align_ends_s1[0][0] = true;
+	}
+	else {
+		if (reachable[s1len][0] == true && gen[0][0] == true) {
+			align_ends_s1[0][0] = true;
+		}
+		for (j=qlen; j>=0; j--) {
+			if (reachable[s1len][j] == true) {
+				for (i=s1len; i>=1; i--) {
+					// if it is possible to get away from (i,j) without a free end gap
+					if (match[i][j] == true || mmatch[i][j] == true || del[i][j] == true) {
+						if (i == s1len) {
+							align_ends_s1[i][j] = true;
+							if (gst[s1len][j] != true) {
+								break;
+							}
+						}
+						else {
+							if (gen[i][j] == true) {
+								align_ends_s1[i][j] = true;
 							}
 						}
 					}
@@ -233,78 +434,14 @@ int backtrace2(const bool** ins, const bool** del, const bool** match, const boo
 			}
 		}
 	}
-	else {
-		if (match[s1len][qlen] == true || mmatch[s1len][qlen] == true || del[s1len][qlen] == true || ins[s1len][qlen] == true) transitions[s1len][0] = true;
-		if (gst[s1len][qlen] == true) {
-			for (int k=s1len-1; k >= 0; k--) {
-				if (gen[k][qlen] == true) {
-					transitions[k][0] = true;
-				}
-			}
-		}
-	}
-	return 0;
-}
-
-
-int
-backtrace(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
-		  const int16_t qlen, const int16_t s1len, const int16_t s2len,
-		  const int16_t i, const int16_t j, const int16_t first_nonmatching, const int16_t first_matching,
-		  bool** transitions, int16_t rec_depth)
-{	
-	int k;
-
-	if (rec_depth > MAX_REC_DEPTH) {
-		//printf("max. rec depth: %d %d, %d %d\n", i, j, first_nonmatching, first_matching);
-		return 1;
-	}
-
-	if (i == 0 && j == 0) {
-		transitions[first_nonmatching][first_matching] = true;
-		return 0;
-	}
-	if (ins[i][j] == true) {
-		if (rec_depth == MAX_REC_DEPTH) printf("rec depth -1: %d %d, ins\n", i, j);
-		backtrace(ins, del, match, mmatch, gst, gen, qlen, s1len, s2len, i, j-1, first_nonmatching, first_matching, transitions, rec_depth+1);
-	}
-	if (del[i][j] == true) {
-		if (rec_depth == MAX_REC_DEPTH) printf("rec depth -1: %d %d, del\n", i, j);
-		backtrace(ins, del, match, mmatch, gst, gen, qlen, s1len, s2len, i-1, j, first_nonmatching, first_matching, transitions, rec_depth+1);
-	}
-	if (match[i][j]) {
-		if (i <= s1len) {
-			if (first_nonmatching == 0) {
-				if (rec_depth == MAX_REC_DEPTH) printf("rec depth -1: %d %d, match in s1 setting first_nonmatching\n", i, j);
-				backtrace(ins, del, match, mmatch, gst, gen, qlen, s1len, s2len, i-1, j-1, i, first_matching, transitions, rec_depth+1);
-			} else {
-				if (rec_depth == MAX_REC_DEPTH) printf("rec depth -1: %d %d, match in s1\n", i, j);
-				backtrace(ins, del, match, mmatch, gst, gen, qlen, s1len, s2len, i-1, j-1, first_nonmatching, first_matching, transitions, rec_depth+1);
-			}
-		} else {
-			if (rec_depth == MAX_REC_DEPTH) printf("rec depth -1: %d %d, match in s2\n", i, j);
-			backtrace(ins, del, match, mmatch, gst, gen, qlen, s1len, s2len, i-1, j-1, first_nonmatching, i-s1len-1, transitions, rec_depth+1);
-		}
-	}
-	if (mmatch[i][j] == true) {
-		if (rec_depth == MAX_REC_DEPTH) printf("rec depth -1: %d %d, mmatch\n", i, j);
-		backtrace(ins, del, match, mmatch, gst, gen, qlen, s1len, s2len, i-1, j-1, first_nonmatching, first_matching, transitions, rec_depth+1);
-	}
-	if (gst[i][j] == true) {
-		for (k = i-1; k >= 0; k--) {
-			if (gen[k][j] == true) {
-				if (rec_depth == MAX_REC_DEPTH) printf("rec depth -1: %d %d, gst %d -> %d\n", i, j, k, j);
-				backtrace(ins, del, match, mmatch, gst, gen, qlen, s1len, s2len, k, j, first_nonmatching, first_matching, transitions, rec_depth+1);
-			} 
-		}
-	}
 	return 0;
 }
 
 int 
-align(const char* query, const char* subj,
+align(const unsigned char* query, const unsigned char* subj,
 	  const int16_t qlen, const int16_t s1len, const int16_t s2len,
 	  const int16_t m, const int16_t mm, const int16_t go, const int16_t ge,
+	  const bool free_gap_s1, const bool free_gap_s2,
 	  int16_t** scores,
 	  bool** ins, bool** del, bool** match, bool** mmatch, bool** gst, bool** gen) 
 {
@@ -319,10 +456,9 @@ align(const char* query, const char* subj,
 		col_max_score[j] = SHRT_MIN;
 	}
 
-	//scores[s1len][0] = (s1len > 0) ? go + s1len * ge : 0;
-	scores[s1len][0] = 0;
-	del[s1len][0] = false;
-	gst[s1len][0] = (s1len > 0) ? true : false;
+	scores[s1len][0] = (s1len > 0 && free_gap_s1 == false) ? go + s1len * ge : 0;
+	del[s1len][0] = (s1len > 0 && free_gap_s1 == false) ? true : false;
+	gst[s1len][0] = (s1len > 0 && free_gap_s1 == true) ? true : false;
 	gen[s1len][0] = true;
 
 	for (i=1; i< s1len; i++) {
@@ -333,9 +469,9 @@ align(const char* query, const char* subj,
 	}
 
 	for (i=s1len+1; i<=s1len+s2len; i++) {
-		scores[i][0] = 0;
-		del[i][0] = false;
-		gst[i][0] = true;
+		scores[i][0] = (free_gap_s2 == true) ? scores[s1len][0] : scores[s1len][0] + (!del[s1len][0]) * go + (i-s1len) * ge;
+		del[i][0] = (free_gap_s2 == true) ? false : true;
+		gst[i][0] = (free_gap_s2 == true) ? true : false;
 		gen[i][0] = false;
 	}
 
@@ -346,7 +482,6 @@ align(const char* query, const char* subj,
             // deletion
             op_scores[1] = scores[i-1][j] + (!del[i-1][j]) * go + ge;
             // match/mismatch
-            //if (subj[i-1] == query[j-1]) {
             if (MATCH[subj[i-1]][query[j-1]] == true) {
             	op_scores[2] = scores[i-1][j-1] + m;
                 op_scores[3] = SHRT_MIN;
@@ -359,10 +494,10 @@ align(const char* query, const char* subj,
             	op_scores[4] = SHRT_MIN;
             }
             else if (i == s1len) {
-            	op_scores[4] = col_max_score[j];
+            	op_scores[4] = (free_gap_s1 == true) ? col_max_score[j] : SHRT_MIN;
             }
             else {
-            	op_scores[4] = scores[s1len][j];
+            	op_scores[4] = (free_gap_s2 == true) ? scores[s1len][j] : SHRT_MIN;
             }
 
             max_op_score = SHRT_MIN;
