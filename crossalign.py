@@ -1,3 +1,5 @@
+import logging
+import sys
 import os, argparse, shutil
 import pandas as pd
 import numpy as np
@@ -8,11 +10,42 @@ from scipy.stats import norm
 import ctypes as ct
 import re
 from pandarallel import pandarallel
+from itertools import groupby, count
+from collections import deque
 
 # translate for building complement of a DNA sequence
 compl = str.maketrans('ATGCNSWRYKMatgcnswrykm', 'TACGNWSYRMKtacgnwsyrmk')
 cg_pat = re.compile("(\d+)([=XID])")
 plt.rcParams.update({'font.size': 12})
+
+# initialize the necessary data structures
+clib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "align.so")
+
+nd_pp = np.ctypeslib.ndpointer(dtype=np.uintp, ndim=1, flags='C_CONTIGUOUS')
+align = ct.CDLL(clib).align
+align.argtypes = [ct.c_char_p, ct.c_char_p, 
+                  ct.c_short, ct.c_short, ct.c_short,
+                  ct.c_short, ct.c_short, ct.c_short, ct.c_short,
+                  ct.c_bool, ct.c_bool,
+                  nd_pp, nd_pp, nd_pp, nd_pp, nd_pp, nd_pp, nd_pp]
+align.restype = ct.c_int
+
+backtrace = ct.CDLL(clib).backtrace
+backtrace.argtypes = [nd_pp, nd_pp, nd_pp, nd_pp, nd_pp, nd_pp,
+                      ct.c_short, ct.c_short, ct.c_short,
+                      nd_pp, nd_pp, nd_pp]
+backtrace.restype = ct.c_int
+
+get_cigar = ct.CDLL(clib).get_cigar
+get_cigar.argtypes = [nd_pp, nd_pp, nd_pp, nd_pp, nd_pp, nd_pp,
+                      ct.c_short, ct.c_short, ct.c_short,
+                      nd_pp, ct.c_short, ct.c_short, ct.c_short, ct.c_short, ct.c_char_p]
+get_cigar.restype = ct.c_int
+
+get_transitions = ct.CDLL(clib).get_transitions
+get_transitions.argtypes = [nd_pp, ct.c_short, ct.c_short, ct.c_short,
+                            nd_pp, nd_pp, nd_pp, nd_pp, nd_pp]
+get_transitions.restype = ct.c_int
 
 class ArgHelpFormatter(argparse.HelpFormatter):
     '''
@@ -49,32 +82,43 @@ def get_args(args=None):
                             help='Fasta file containing the genomic sequences that is searched for insertion sites.')
     main_group.add_argument('adapter',
                             help='Transposon Y adapter sequence')
+    main_group.add_argument('--genome_paf',
+                            help='Alignment file in paf format containing the reads vs. genome reference mapping results.')
+    main_group.add_argument('--adapter_paf',
+                            help='Alignment file in paf format containing the reads vs. adapter reference mapping results.')
     main_group.add_argument('--prefix',
-                            help="filename for readstarts in tap seperated value (.tsv) format",
-                            default="readstarts")
+                            help="filename prefix (optionally with absolute path) for generated output files.",
+                            default="crossalign")
     main_group.add_argument('--plot',
-                            help='plot results of gaussian approximation',
+                            help='plot results of gaussian sequencing error approximation',
                             action='store_true')
     main_group.add_argument('--circular',
                             action="store_true")
     main_group.add_argument('--strip',
-                            help="number of bases stripped from alignments to cope with coincidently identical sequences",
+                            help="minimal number of bases stripped from local alignments to cope with coincidently identical sequences",
                             type=int,
                             default=5)
     main_group.add_argument('--wordsize',
-                            help='',
+                            help='''minimal number of consecutive terminal matches that need to remain after trimming bases from
+                            local alignments.''',
                             type=int,
-                            default=12)
+                            default=5)
     main_group.add_argument('--max_dist',
                             help='''max distance between an adapter and a genome alignment to perform pairwise-alignment 
                                  in order to identify the exact transition point''',
                             type=int,
                             default=200)
+    main_group.add_argument('--sequence_type',
+                            default='nucl',
+                            choices=['nucl', 'aa'])
     main_group.add_argument('--processes',
                             type=int,
                             default=6)
     main_group.add_argument('--progress',
                             help='show progress bars',
+                            action='store_true')
+    main_group.add_argument('-q','--quiet',
+                            help='limit output to warning and error messages',
                             action='store_true')
     
     align_group = parser.add_argument_group('Alignment Options')
@@ -89,7 +133,7 @@ def get_args(args=None):
     align_group.add_argument('--gap_open',
                              help='gap open penalty',
                              type=int,
-                             default=-4)
+                             default=-1)
     align_group.add_argument('--gap_extension',
                              help='gap extension penalty',
                              type=int,
@@ -144,7 +188,7 @@ def parse_paf(fn, cigar=False):
                        converters=converters)
 
 def traverse_cg(trimmed_query, trimmed_subject, bases, op):
-    if op == "=" and bases >= args.wordsize:
+    if op == "=" and bases >= args.wordsize and trimmed_query >= args.strip:
         return trimmed_query, trimmed_subject
     if op == "=" or op == 'X':
         trimmed_query += bases
@@ -154,7 +198,7 @@ def traverse_cg(trimmed_query, trimmed_subject, bases, op):
     elif op == 'D':
         trimmed_subject += bases
     else:
-        print('ERROR: unknown CIGAR Operation:', op)
+        logger.error('ERROR: unknown CIGAR Operation:', op)
         exit(1)
     return trimmed_query, trimmed_subject
 
@@ -217,40 +261,44 @@ def fix_query_en(row):
     # unsuccessful
     return np.nan, np.nan
 
-def get_query_seq(df, sel, fix=True):
+def get_query_start_and_end(df, sel, fix=True):
     df['ref1_trim'], df['ref2_trim'] = 0, 0
     cg_ad = df.cg_ad.str.replace('D|I', 'X')
     cg_gn = df.cg_gn.str.replace('D|I', 'X')
-    # set query start and end for easy cases
-    for trans_order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, qen, qst in [( 1., 'strand_ad', 'strand_gn', cg_ad, cg_gn, 'qen_ad', 'qst_gn'),
-                                                                              (-1., 'strand_gn', 'strand_ad', cg_gn, cg_ad, 'qen_gn', 'qst_ad')]:
-        sel_ = ((df[strand_ref1] == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize)) | \
-               ((df[strand_ref1] == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize))
-        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_st'] = df.loc[sel & (df.trans_order == trans_order) & sel_, qen]
-        print("set", trans_order, "query_st")
-        sel_ = ((df[strand_ref2] == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= args.wordsize)) | \
-               ((df[strand_ref2] == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= args.wordsize))
-        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_en'] = df.loc[sel & (df.trans_order == trans_order) & sel_, qst]
-        print("set", trans_order, "query_en")
+    # set query start and end for trivial cases
+    for trans_order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, ref1_qen, ref2_qst in [( 1., 'strand_ad', 'strand_gn', cg_ad, cg_gn, 'qen_ad', 'qst_gn'),
+                                                                                        (-1., 'strand_gn', 'strand_ad', cg_gn, cg_ad, 'qen_gn', 'qst_ad')]:
+        logger.info("setting {} query_st".format(trans_order))
+        sel_ = ((df[strand_ref1] == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) | \
+               ((df[strand_ref1] == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip)))
+        #sel_ = ((df[strand_ref1] == '+') & (df[cg_ref1].str.extract(r'(\d)=$').astype(np.float32) >= (args.wordsize + args.strip))) | \
+        #       ((df[strand_ref1] == '-') & (df[cg_ref1].str.extract(r'^(\d)=').astype(np.float32) >= (args.wordsize + args.strip)))
+        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_st'] = df.loc[sel & (df.trans_order == trans_order) & sel_, ref1_qen]
+        logger.info("setting {} query_en".format(trans_order))
+        sel_ = ((df[strand_ref2] == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip))) | \
+               ((df[strand_ref2] == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) 
+        #       ((df[strand_ref2] == '-') & (df[cg_ref2].str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip)))
+        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'query_en'] = df.loc[sel & (df.trans_order == trans_order) & sel_, ref2_qst]
     
-    # for query start and end for harder cases
+    sel_ = sel & df.query_st.notnull()
+    df.loc[sel_, 'query_st'] -= args.strip
+    df.loc[sel_, 'ref1_trim'] += args.strip
+    sel_ = sel & df.query_en.notnull()
+    df.loc[sel_, 'query_en'] += args.strip
+    df.loc[sel_, 'ref2_trim'] += args.strip
+    
+    # for query start and end for non-trivial cases
     if fix:
-        print('need to fix', sum(sel & df.query_st.isnull()), 'query starts')
+        logger.info('need to fix {} query starts'.format(sum(sel & df.query_st.isnull())))
         df.loc[sel & df.query_st.isnull(), ['query_st', 'ref1_trim']] = pd.DataFrame(
             df.loc[sel & df.query_st.isnull()].parallel_apply(lambda row: fix_query_st(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_st.isnull()].index, columns=['query_st', 'ref1_trim']
         )
-        print('need to fix', sum(sel & df.query_en.isnull()), 'query starts')
+        logger.info('need to fix {} query ends'.format(sum(sel & df.query_en.isnull())))
         df.loc[sel & df.query_en.isnull(), ['query_en', 'ref2_trim']] = pd.DataFrame(
             df.loc[sel & df.query_en.isnull()].parallel_apply(lambda row: fix_query_en(row), axis=1).values.tolist(), 
             index=df.loc[sel & df.query_en.isnull()].index, columns=['query_en', 'ref2_trim']
         )
-    sel_ = sel & df.query_st.notnull()
-    df.loc[sel, 'query_st'] -= args.strip
-    df.loc[sel, 'ref1_trim'] += args.strip
-    sel_ = sel & df.query_en.notnull()
-    df.loc[sel, 'query_en'] += args.strip
-    df.loc[sel, 'ref2_trim'] += args.strip
     return df
 
 def sequence_length_stats(df):
@@ -272,30 +320,49 @@ def sequence_length_stats(df):
         ax.plot(x, y)
         plt.show()
 
+def count_iter_items(iterable):
+        counter = count()
+        deque(zip(iterable, counter), maxlen=0)  # (consume at C speed)
+        return next(counter)
+
 def c_align_row(row):
-    if pd.isnull(row.ref1):
-        #row['score'] = np.nan
-        #row['transisions'] = None
+    if pd.isnull(row.max_ref_len):
         return row
-    qlen, s1len, s2len = len(row.query_seq), len(row.ref1), len(row.ref2)
-    query, subj = row.query_seq.encode("utf8"), (row.ref1+row.ref2).encode("utf8")
-    align(query, subj, 
-          qlen, s1len, s2len,
-          args.match, args.mismatch, args.gap_open, args.gap_extension,
-          scores_pp, *ops_pp)
+    # determine query and reference seqeunces
+    query_seq = reads.loc[row.rid].seq[int(row.query_st) : int(row.query_en)]
+    ref1 = get_ref1(row)
+    ref2 = get_ref2(row)
+
+    qlen, s1len, s2len = len(query_seq), len(ref1), len(ref2)
+    query, subj = query_seq.encode("utf8"), (ref1+ref2).encode("utf8")
+    assert align(query, subj, qlen, s1len, s2len,
+                 args.match, args.mismatch, args.gap_open, args.gap_extension,
+                 True, True,
+                 scores_pp, *ops_pp) == 0, "alignment failed"
     score = scores[s1len+s2len, qlen]
-    
-    transitions = np.zeros(shape=(s1len+1, s2len+1), dtype=np.bool_)
-    if transitions.flags['C_CONTIGUOUS'] == False:
-        transitions = np.ascontiguousarray(transitions, dtype=transitions.dtype)
-    transitions_pp = (transitions.ctypes.data + np.arange(transitions.shape[0]) * transitions.strides[0]).astype(np.uintp)
-    backtrace(*ops_pp,
-              qlen, s1len, s2len,
-              transitions_pp)
-    transitions_hr = list(zip(*np.where(transitions)))
-    
+
+    assert backtrace(*ops_pp, qlen, s1len, s2len,
+                     align_ends_pp0, align_ends_pp1, reachable_pp) == 0 , \
+           "failed to trace back the alignment's end points"
+    assert get_transitions(ops_pp[0], qlen, s1len, s2len,
+                           align_ends_pp0, align_ends_pp1, reachable_pp, 
+                           transitions_pp0, transitions_pp1) == 0, \
+           "failed to determine transition sites based on alignment endpoints"
+
+    transitions_list = []
+    for s1_fna, s2_fa in zip(*np.where(transitions[0,:s1len+1, :s2len+1] >= 0)):
+        query_ts = transitions[0, s1_fna, s2_fa]
+        query_te = transitions[1, s1_fna, s2_fa]
+        assert get_cigar(*ops_pp, qlen, s1len, s2len,
+                         reachable_pp, s1_fna, s2_fa, query_ts, query_te,
+                         cigarbuffer) == 0, \
+               "failed to retrieve the CIGAR string for alignment"
+        cigar = cigarbuffer.value.decode('utf-8')
+        cigar = "".join(["{}{}".format(count_iter_items(g), k) for k,g in groupby(cigar)])
+        transitions_list.append( (s1_fna, s2_fa, query_ts, query_te, cigar) )
+
     row['score'] = score
-    row['transitions'] = transitions_hr
+    row['transitions'] = transitions_list
     return row
 
 def get_ref1(row):
@@ -339,7 +406,7 @@ def get_ref2(row):
     return ref2
 
 def plot_norm_score_distribution(df, title, nbins=50):
-    x, y = df.query_seq.str.len(), df.norm_score
+    x, y = (df.query_en - df.query_st), df.norm_score
     
     # definitions for the axes
     left, width = 0.1, 0.65
@@ -381,7 +448,17 @@ def plot_norm_score_distribution(df, title, nbins=50):
 if __name__ == '__main__':
     args = get_args()
 
-    pandarallel.initialize(nb_workers=args.processes, progress_bar=args.progress)
+    if args.quiet:
+        logging.basicConfig(stream=sys.stderr, level=logging.WARNING, 
+                            format='%(asctime)s %(levelname)s: %(message)s', datefmt='%H:%M:%S')
+    else:
+        logging.basicConfig(stream=sys.stderr, level=logging.DEBUG, 
+                            format='%(asctime)s %(levelname)s: %(message)s', datefmt='%H:%M:%S')
+    logger = logging.getLogger('main')
+
+    pandarallel.initialize(nb_workers=args.processes, progress_bar=(args.progress and not args.quiet))
+
+    
 
     # read sequence data
     fq_files = []
@@ -393,72 +470,69 @@ if __name__ == '__main__':
                 and (f.endswith(".fastq") or f.endswith(".fq"))])
 
     adapter = {}
-    print(" - reading adapter sequence ...")
+    logger.info(" - reading adapter fasta ...")
     for record in SeqIO.parse(args.adapter, "fasta"):
         adapter[str(record.id)] = str(record.seq)
     adapter = pd.DataFrame.from_dict(adapter, orient='index', columns=['seq'], dtype='string')
-    print('{:>11} adapter sequence(s) in fasta file'.format(len(adapter)))
+    logger.info('{:>11} adapter sequence(s) in fasta file'.format(len(adapter)))
 
-    print(" - reading genome fasta ...")
+    logger.info(" - reading genome fasta ...")
     genome = {}
     for record in SeqIO.parse(args.genome, "fasta"):
         genome[str(record.id)] = str(record.seq)
     genome = pd.DataFrame.from_dict(genome, orient='index', columns=['seq'], dtype='string')
-    print('{:>11} genomic sequence(s) in fasta file'.format(len(genome)))
+    logger.info('{:>11} genomic sequence(s) in fasta file'.format(len(genome)))
 
-    print(" - reading fastq files ...")
+    logger.info(" - reading fastq files ...")
     reads = {}
     for fqFile in fq_files:
         for record in SeqIO.parse(fqFile, "fastq"):
             reads[str(record.id)] = str(record.seq)
     reads = pd.DataFrame.from_dict(reads, orient='index', columns=['seq'], dtype='string')
-    print("{:>11} reads in dataset\n".format(len(reads)))
+    logger.info("{:>11} reads in dataset\n".format(len(reads)))
 
-    tmp_dir = '{}_tmp'.format(args.prefix)
-    if os.path.exists(tmp_dir):
-        shutil.rmtree(tmp_dir)
-    os.makedirs(tmp_dir)
-
-    print(" - performing reads to adapter reference mapping ...")
-    fq_fn = " ".join(fq_files)
-    ref_fn = args.adapter
-    paf_fn = os.path.join(tmp_dir, "adapter_alignment.paf")
-    exit_code = run_minimap2(ref_fn, fq_fn, paf_fn)
-    if exit_code:
-        print('ERROR: adapter reference mapping failed with exit code', exit_code)
-        exit(1)
-    ad_algn_df = parse_paf(paf_fn, cigar=True)#.set_index('qid')
-    print("{:>11} {:>7} primary alignments against adapter sequence(s)".format(len(ad_algn_df), ""))
+    if not args.adapter_paf:
+        logger.info(" - performing reads to adapter reference mapping ...")
+        fq_fn = " ".join(fq_files)
+        ref_fn = args.adapter
+        args.adapter_paf = "{}.adapter_alignment.paf".format(args.prefix)
+        exit_code = run_minimap2(ref_fn, fq_fn, args.adapter_paf)
+        if exit_code:
+            logger.error('ERROR: adapter reference mapping failed with exit code', exit_code)
+            exit(1)
+    ad_algn_df = parse_paf(args.adapter_paf, cigar=True)#.set_index('qid')
+    logger.info("{:>11} {:>7} primary alignments against adapter sequence(s)".format(len(ad_algn_df), ""))
     c = sum(ad_algn_df.strand == '+')
-    print("{:>11} {:>5.1f} % against (+) strand".format(c, c/len(ad_algn_df)*100.))
+    logger.info("{:>11} {:>5.1f} % against (+) strand".format(c, c/len(ad_algn_df)*100.))
     c = sum(ad_algn_df.strand == '-')
-    print("{:>11} {:>5.1f} % against (-) strand".format(c, c/len(ad_algn_df)*100.))
+    logger.info("{:>11} {:>5.1f} % against (-) strand".format(c, c/len(ad_algn_df)*100.))
     c = len(set(ad_algn_df.qid))
-    print("{:>11} {:>5.1f} % of reads align against any adapter sequence".format(c, c/len(reads)*100.))
+    logger.info("{:>11} {:>5.1f} % of reads align against any adapter sequence".format(c, c/len(reads)*100.))
 
-    print(" - performing reads to genome reference mapping ...")
-    ref_fn = args.genome
-    paf_fn = os.path.join(tmp_dir, "genome_alignment.paf")
-    exit_code = run_minimap2(ref_fn, fq_fn, paf_fn)
-    if exit_code:
-        print('ERROR: adapter reference mapping failed with exit code', exit_code)
-        exit(1)
-    gn_algn_df = parse_paf(paf_fn, cigar=True)#.set_index('qid')
-    print("{:>11} {:>7} primary alignments against genomic sequence(s)".format(len(gn_algn_df), ""))
+    if not args.genome_paf:
+        logger.info(" - performing reads to genome reference mapping ...")
+        ref_fn = args.genome
+        args.genome_paf = "{}.genome_alignment.paf".format(args.prefix)
+        exit_code = run_minimap2(ref_fn, fq_fn, args.genome_paf)
+        if exit_code:
+            logger.error('ERROR: adapter reference mapping failed with exit code', exit_code)
+            exit(1)
+    gn_algn_df = parse_paf(args.genome_paf, cigar=True)#.set_index('qid')
+    logger.info("{:>11} {:>7} primary alignments against genomic sequence(s)".format(len(gn_algn_df), ""))
     c = sum(gn_algn_df.strand == '+')
-    print("{:>11} {:>5.1f} % against (+) strand".format(c, c/len(gn_algn_df)*100.))
+    logger.info("{:>11} {:>5.1f} % against (+) strand".format(c, c/len(gn_algn_df)*100.))
     c = sum(gn_algn_df.strand == '-')
-    print("{:>11} {:>5.1f} % against (-) strand".format(c, c/len(gn_algn_df)*100.))
+    logger.info("{:>11} {:>5.1f} % against (-) strand".format(c, c/len(gn_algn_df)*100.))
     c = len(set(gn_algn_df.qid))
-    print("{:>11} {:>5.1f} % of reads align against any genome sequence".format(c, c/len(reads)*100.))
+    logger.info("{:>11} {:>5.1f} % of reads align against any genome sequence".format(c, c/len(reads)*100.))
 
     if not (args.mean and args.std):
-        print(" - determining statistics about per-base difference ([align. subject len] - [align. query len]) / [align. query len] from genome alignments")
+        logger.info(" - determining statistics about per-base difference ([align. subject len] - [align. query len]) / [align. query len] from genome alignments")
         sequence_length_stats(gn_algn_df)
-        print("{:>11.4f} mean of per-base difference in sequence length".format(args.mean))
-        print("{:>11.4f} std dev of per-base difference in sequence length".format(args.std))
+        logger.info("{:>11.4f} mean of per-base difference in sequence length".format(args.mean))
+        logger.info("{:>11.4f} std dev of per-base difference in sequence length".format(args.std))
 
-    print(" - joining alignment data and filtering for adjacent adapter-genome alignments")
+    logger.info(" - joining alignment data and filtering for adjacent adapter-genome alignments")
     # determine order of alignments of each read with respect to each adapter-subject pair
     d_ad = pd.merge(pd.DataFrame(reads.index, columns=['rid']).set_index('rid', drop=False), 
                     ad_algn_df.set_index('qid'),
@@ -471,122 +545,130 @@ if __name__ == '__main__':
     sel = df.subj_ad.notnull() & \
           df.subj_gn.notnull()
 
-    print('{:>11} {:>7} entities after joining'.format(len(df), ""))
+    logger.info('{:>11} {:>7} entities after joining'.format(len(df), ""))
     c = sum(np.logical_not(sel))
-    print('{:>11} {:>5.1f} % not aligning against both an adapter and a genomic seq'.format(c, c/len(df)*100.))
+    logger.info('{:>11} {:>5.1f} % not aligning against both an adapter and a genomic seq'.format(c, c/len(df)*100.))
     c = len(set(df.loc[sel, 'rid']))
-    print('{:>11} {:>5.1f} % reads remaining that contain potential transitions between adapter and genomic seq.'.format(c, c/len(reads)*100.))
-    c = sum(sel)
-    print('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
-
-    # deleting non-potential transitions at this point so that all procentual values are with respect to potential ones only
-    print(" - deleting all entries from dataframe that are not potential transitions")
-    df = df.drop(df.index[np.logical_not(sel)]).astype({"qlen_ad":np.int32, "qst_ad":np.int32, "qen_ad":np.int32, "slen_ad":np.int32,
-                                                       "sst_ad":np.int32, "sen_ad":np.int32, "mlen_ad":np.int32, "blen_ad":np.int32, "mapq_ad":np.int32,
-                                                       "qlen_gn":np.int32, "qst_gn":np.int32, "qen_gn":np.int32, "slen_gn":np.int32,
-                                                       "sst_gn":np.int32, "sen_gn":np.int32, "mlen_gn":np.int32, "blen_gn":np.int32, "mapq_gn":np.int32})
-    sel = df.subj_ad.notnull() & \
-          df.subj_gn.notnull()
+    logger.info('{:>11} {:>5.1f} % reads remaining that contain potential transitions between adapter and genomic seq.'.format(c, c/len(reads)*100.))
 
     # identify rows describing a transition from adapter to genomic sequence or vise versa
     df.loc[sel,'trans_order'] = 0 # qst_ad == qst_gn
     df.loc[sel & (df.qst_ad < df.qst_gn), 'trans_order'] = 1 # adapter -> genome
     df.loc[sel & (df.qst_ad > df.qst_gn), 'trans_order'] = -1 # genome -> adapter
-    c = sum(df[sel].qst_ad < df[sel].qst_gn)
-    print('{:>11} {:>5.1f} % of total potential transpositions are adapter -> genome'.format(c, c/len(df[sel])*100.))
-    c = sum(df[sel].qst_ad > df[sel].qst_gn)
-    print('{:>11} {:>5.1f} % of total potential transpositions are genome -> adapter'.format(c, c/len(df[sel])*100.))
 
-    # select all entries with an sufficiently long alignment to both the adapter and the genome
-    print(' - filter potential subject transitions based on alignment lengths')
+    # remove pairs of alignments which are too distant from one another
+    sel_ = (sel & (df.trans_order ==  1.) & ((df.qst_gn - df.qen_ad) <= args.max_dist)) | \
+           (sel & (df.trans_order == -1.) & ((df.qst_ad - df.qen_gn) <= args.max_dist))
+    c = sum(sel & np.logical_not(sel_))
+    logger.info('{:>11} {:>5.1f} % transitions have local alignments that are >{} nt apart from each other'.format(c, c/len(df)*100., args.max_dist))
+    sel = sel_
+    c = sum(sel)
+    logger.info('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
+
+    # deleting non-potential transitions at this point so that all procentual values are with respect to potential ones only
+    logger.info(" - deleting all entries from dataframe that are not potential transitions")
+    dtypes = {"{}_{}".format(key, suffix):np.int32 for suffix in ['ad', 'gn'] \
+              for key in ["qlen","qst","qen","slen","sst","sen","mlen","blen","mapq"]}
+    df = df.drop(df.index[np.logical_not(sel)]).astype(dtypes)
+    sel = df.subj_ad.notnull() & \
+          df.subj_gn.notnull()
+
+    
+    c = sum(df[sel].qst_ad < df[sel].qst_gn)
+    logger.info('{:>11} {:>5.1f} % of total potential transpositions are adapter -> genome'.format(c, c/len(df[sel])*100.))
+    c = sum(df[sel].qst_ad > df[sel].qst_gn)
+    logger.info('{:>11} {:>5.1f} % of total potential transpositions are genome -> adapter'.format(c, c/len(df[sel])*100.))
+
+    # select all entries with a sufficiently long alignment to both the adapter and the genome
+    logger.info(' - filter potential subject transitions based on alignment lengths')
     sel_ = (df.blen_ad >= args.min_adapter_blen) & \
            (df.blen_gn >= args.min_genome_blen)
     c = sum(sel & np.logical_not(sel_))
-    print('{:>11} {:>5.1f} % of total potential transpositions filtered'.format(c, c/len(df)*100.))
+    logger.info('{:>11} {:>5.1f} % of total potential transpositions filtered'.format(c, c/len(df)*100.))
     c = sum(sel & np.logical_not(df.blen_ad >= args.min_adapter_blen))
-    print('{:>11} {:>5.1f} % bc adapter alignment length < {}'.format(c, c/len(df)*100., args.min_adapter_blen))
+    logger.info('{:>11} {:>5.1f} % bc adapter alignment length < {}'.format(c, c/len(df)*100., args.min_adapter_blen))
     c = sum(sel & np.logical_not(df.blen_gn >= args.min_genome_blen))
-    print('{:>11} {:>5.1f} % bc genome alignment length < {}'.format(c, c/len(df)*100., args.min_genome_blen))
+    logger.info('{:>11} {:>5.1f} % bc genome alignment length < {}'.format(c, c/len(df)*100., args.min_genome_blen))
     sel &= sel_
     c = sum(sel)
-    print('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
+    logger.info('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
 
     # determine query seq start and end in read coordinates
-    print(" - determine query seq start and end in read coordinates")
-    df = get_query_seq(df, sel)
+    logger.info(" - determine query seq start and end in read coordinates")
+    df = get_query_start_and_end(df, sel)
     c = sum(sel & (df.query_st.isnull() | df.query_en.isnull()))
-    print('{:>11} {:>5.1f} % of remaining potential transpositions had < {} matching terminal bases'.format(c, c/sum(sel)*100., args.wordsize))
+    logger.info('{:>11} {:>5.1f} % of remaining potential transpositions had < {} matching terminal bases'.format(c, c/sum(sel)*100., args.wordsize))
     sel &= df.query_st.notnull() & df.query_en.notnull()
     c = sum(sel)
-    print('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
+    logger.info('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
 
     # filter out entries with query seq. that are too long -> distance between adapter and genome alignment is too large
-    print(" - exclude entries based on query sequence length (adapter-genome alignment distance) from analysis")
+    logger.info(" - exclude entries based on query sequence length (adapter-genome alignment distance) from analysis")
     too_short = (df.query_en - df.query_st) < 0.
     too_long = (df.query_en - df.query_st) > args.max_dist
     c = sum(too_short)
-    print('{:>11} {:>5.1f} % of remaining potential transpositions removed due to query seq. length < 0 nt (alignment overlap of more than {} nt)'.format(c, c/sum(sel)*100., args.strip))
+    logger.info('{:>11} {:>5.1f} % of remaining potential transpositions removed due to query seq. length < 0 nt (alignment overlap of more than {} nt)'.format(c, c/sum(sel)*100., args.strip))
     c = sum(too_long)
-    print('{:>11} {:>5.1f} % of remaining potential transpositions removed due to query seq. length > {} nt'.format(c, c/sum(sel)*100., args.max_dist))
+    logger.info('{:>11} {:>5.1f} % of remaining potential transpositions removed due to query seq. length > {} nt'.format(c, c/sum(sel)*100., args.max_dist))
     sel &= np.logical_not(too_short) & np.logical_not(too_long)
     c = sum(sel)
-    print('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
+    logger.info('{:>11} {:>5.1f} % potential transitions remaining'.format(c, c/len(df)*100.))
 
-    # set query seq for each row
-    print(" - determining query sequences")
-    df.loc[sel, 'query_seq'] = df[sel].parallel_apply(lambda row: reads.loc[row.rid].seq[int(row.query_st) : int(row.query_en)], axis=1)
-
-    print(" - determining reference sequences")
+    ## set query seq for each row
+    #logger.info(" - determining query sequences")
+    #df.loc[sel, 'query_seq'] = df[sel].parallel_apply(lambda row: reads.loc[row.rid].seq[int(row.query_st) : int(row.query_en)], axis=1)
+    #
+    #logger.info(" - determining reference sequences")
     df.loc[sel, 'max_ref_len'] = ((df[sel].query_en - df[sel].query_st) * (1 + args.mean + 3 * args.std) + 0.5).round()
-    df.loc[sel, 'ref1'] = df.loc[sel].parallel_apply(lambda row: get_ref1(row), axis=1)
-    df.loc[sel, 'ref2'] = df.loc[sel].parallel_apply(lambda row: get_ref2(row), axis=1)
+    #df.loc[sel, 'ref1'] = df.loc[sel].parallel_apply(lambda row: get_ref1(row), axis=1)
+    #df.loc[sel, 'ref2'] = df.loc[sel].parallel_apply(lambda row: get_ref2(row), axis=1)
 
-    print(' - aligning')
-    # initialize the necessary data structures
-    clib = os.path.join(os.path.dirname(os.path.realpath(__file__)), "align.so")
+    logger.info(' - aligning')
+    ct.CDLL(clib).init(args.sequence_type == 'nucl')
 
-    nd_pp = np.ctypeslib.ndpointer(dtype=np.uintp, ndim=1, flags='C_CONTIGUOUS')
-    align = ct.CDLL(clib).align
-    align.argtypes = [ct.c_char_p, ct.c_char_p, 
-                      ct.c_short, ct.c_short, ct.c_short,
-                      ct.c_short, ct.c_short, ct.c_short, ct.c_short,
-                      nd_pp, nd_pp, nd_pp, nd_pp, nd_pp, nd_pp, nd_pp]
-    align.restype = ct.c_int
-
-    backtrace = ct.CDLL(clib).backtrace2
-    backtrace.argtypes = [nd_pp, nd_pp, nd_pp, nd_pp, nd_pp, nd_pp,
-                          ct.c_short, ct.c_short, ct.c_short,
-                          nd_pp]
-    backtrace.restype = ct.c_int
-
-    ct.CDLL(clib).init()
-
+    # create arrays that are passed to c functions
     max_subj_len = 2*int((args.max_dist * (1 + args.mean + 3 * args.std) + 0.5).round())
+
     scores = np.empty(shape=(max_subj_len+1, args.max_dist+1), dtype=np.int16)
     ops = np.empty(shape=(6,max_subj_len+1, args.max_dist+1), dtype=np.bool_)
+    transitions = np.empty(shape=(2, max_subj_len+1, max_subj_len+1), dtype=np.int16)
+    align_ends = np.empty(shape=(2, max_subj_len+1, args.max_dist+1), dtype=np.bool_)
+    reachable = np.empty(shape=(2*max_subj_len+1, args.max_dist+1), dtype=np.bool_)
+    cigarbuffer = ct.create_string_buffer(args.max_dist + 2 * max_subj_len + 1)
+    for arr in [scores, ops, transitions, align_ends, reachable]:
+        if arr.flags['C_CONTIGUOUS'] == False:
+            arr = np.ascontiguousarray(arr, dtype=arr.dtype)
+
+    scores_pp = (scores.ctypes.data + np.arange(scores.shape[0]) * scores.strides[0]).astype(np.uintp)
+    ops_pp = [(ops[i].ctypes.data + np.arange(ops[i].shape[0]) * ops[i].strides[0]).astype(np.uintp) for i in range(6)]
+    transitions_pp0 = (transitions[0].ctypes.data + np.arange(transitions[0].shape[0]) * transitions[0].strides[0]).astype(np.uintp)
+    transitions_pp1 = (transitions[1].ctypes.data + np.arange(transitions[1].shape[0]) * transitions[1].strides[0]).astype(np.uintp)
+    align_ends_pp0 = (align_ends[0].ctypes.data + np.arange(align_ends[0].shape[0]) * align_ends[0].strides[0]).astype(np.uintp)
+    align_ends_pp1 = (align_ends[1].ctypes.data + np.arange(align_ends[1].shape[0]) * align_ends[1].strides[0]).astype(np.uintp)
+    reachable_pp = (reachable.ctypes.data + np.arange(reachable.shape[0]) * reachable.strides[0]).astype(np.uintp)
+    
     # initialize the fields that never change
     scores[0,0] = 0
-    scores[0,1:] = np.arange(args.gap_open + args.gap_extension, args.gap_open + (args.max_dist+1)*args.gap_extension, args.gap_extension)
     ops[:,0,:] = False
     ops[:,:,0] = False
     ops[0,0,1:] = True
     ops[2,0,0] = True
     ops[5,0,0] = True
-    if scores.flags['C_CONTIGUOUS'] == False:
-        scores = np.ascontiguousarray(scores, dtype=scores.dtype)
-    if ops.flags['C_CONTIGUOUS'] == False:
-        ops = np.ascontiguousarray(ops, dtype=ops.dtype)
-    scores_pp = (scores.ctypes.data + np.arange(scores.shape[0]) * scores.strides[0]).astype(np.uintp)
-    ops_pp = [(ops[i].ctypes.data + np.arange(ops[i].shape[0]) * ops[i].strides[0]).astype(np.uintp) for i in range(6)]
+    if args.gap_extension == 0:
+        scores[0,1:] = np.full(args.max_dist, args.gap_open)
+    else:
+        scores[0,1:] = np.arange(args.gap_open + args.gap_extension, 
+                                 args.gap_open + (args.max_dist+1)*args.gap_extension, 
+                                 args.gap_extension)
 
     # start the alignment
     df = df.parallel_apply(lambda row: c_align_row(row), axis=1)
-    df.loc[sel & (df.query_seq.str.len() > 0), 'norm_score'] = df[sel].score / df[sel].query_seq.str.len()
-    df.loc[sel & (df.query_seq.str.len() == 0), 'norm_score'] = args.match # if the two alignments are fitting together perfetly
+    df.loc[sel & ((df.query_en - df.query_st)  > 0), 'norm_score'] = df[sel].score / (df[sel].query_en - df[sel].query_st)
+    df.loc[sel & ((df.query_en - df.query_st) == 0), 'norm_score'] = args.match # if the two alignments are fitting together perfetly
 
     for upper, lower in [(1., .9), (.9, .8), (.8, .7), (.7, .6), (.6, .5), (.5, 0.)]:
         c = sum(sel & (upper >= df.norm_score) & (df.norm_score > lower))
-        print('{:>11} {:>5.1f} % with {} >= normed score > {}'.format(c, c/sum(sel)*100., upper, lower))
+        logger.info('{:>11} {:>5.1f} % with {} >= normed score > {}'.format(c, c/sum(sel)*100., upper, lower))
 
     if args.plot:
         plot_norm_score_distribution(df[sel], "all data")

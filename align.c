@@ -243,7 +243,7 @@ int get_cigar(const bool** ins, const bool** del, const bool** match, const bool
 			j--;
 			continue;
 		}
-		printf("(%d %d) ref1: no way to go!\n", i, j);
+		// it should be impossible that non of the above cases is true
 		return -1;
 	}
 	cigar[blen] = '\0';
@@ -287,7 +287,7 @@ int get_cigar(const bool** ins, const bool** del, const bool** match, const bool
 				continue;
 			}
 		}
-		printf("(%d %d) ref2: no way to go!\n", i, j);
+		// it should be impossible that non of the above cases is true
 		return -1;
 	}
 	cigar[blen] = '\0';
