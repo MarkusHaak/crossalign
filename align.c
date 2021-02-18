@@ -410,7 +410,7 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 		align_ends_s1[0][0] = true;
 	}
 	else {
-		if (reachable[s1len][0] == true && gen[0][0] == true) {
+		if (reachable[s1len][0] == true && gst[s1len][0] == true && gen[0][0] == true) {
 			align_ends_s1[0][0] = true;
 		}
 		for (j=qlen; j>=0; j--) {
