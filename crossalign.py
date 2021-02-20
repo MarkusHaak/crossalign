@@ -13,6 +13,7 @@ from pandarallel import pandarallel
 from itertools import groupby, count
 from collections import deque
 from tqdm import tqdm
+import pysam
 
 # translate for building complement of a DNA sequence
 compl = str.maketrans('ATGCNSWRYKMatgcnswrykm', 'TACGNWSYRMKtacgnwsyrmk')
@@ -91,10 +92,10 @@ def get_args(args=None):
                             only the transition location of the second reference as a free variable. The required format of this
                             file is tab-separated values of subject names and 0-based sites as first and second column values
                             , respectively, without header.''')
-    main_group.add_argument('--genome_paf',
-                            help='Alignment file in paf format containing the reads vs. genome reference mapping results.')
-    main_group.add_argument('--adapter_paf',
-                            help='Alignment file in paf format containing the reads vs. adapter reference mapping results.')
+    main_group.add_argument('--genome_alignment',
+                            help='Alignment file (.paf with cigar string or sorted and indexed .bam) containing the reads vs. genome reference mapping results.')
+    main_group.add_argument('--adapter_alignment',
+                            help='Alignment file (.paf with cigar string or sorted and indexed .bam) containing the reads vs. adapter reference mapping results.')
     main_group.add_argument('--prefix',
                             help="filename prefix (optionally with absolute path) for generated output files.",
                             default="crossalign")
@@ -178,23 +179,57 @@ def run_minimap2(ref_fn, fq_fn, paf_fn):
     return os.system(cmd)
 
 def parse_paf(fn, cigar=False):
-    usecols = list(range(12))
+    usecols = list(range(9))
     names = ["qid", "qlen", "qst", "qen", "strand", "subj", 
-             "slen", "sst", "sen", "mlen", "blen", "mapq"]
+             "slen", "sst", "sen"]
     dtype = {"qid": str, "qlen": np.int32, "qst": np.int32, 
              "qen": np.int32, "strand": str, "subj": str,
-             "slen": np.int32, "sst": np.int32, "sen": np.int32, 
-             "mlen": np.int32, "blen": np.int32, "mapq": np.int32}
+             "slen": np.int32, "sst": np.int32, "sen": np.int32}
     converters = {}
     if cigar:
         usecols.append(22)
         names.append('cg')
-        converters['cg'] = lambda x: x.split(':')[-1]
+        converters['cg'] = lambda x: x.split(':')[-1].replace('M', '=')
     return pd.read_csv(fn, sep='\t', header=None,
                        usecols=usecols,
                        names=names,
                        dtype=dtype,
                        converters=converters)
+
+def parse_bam(fn, reads):
+    f = pysam.AlignmentFile(fn, 'rb')
+    names = ["qid", "qlen", "qst", "qen", "strand", "subj", 
+             "slen", "sst", "sen", "cg"]
+    data = []
+    for seg in f.fetch():
+        m = re.fullmatch(r"(\d+[HS])*((?:\d+[^HS\d])*)(\d+[HS])*", seg.cigarstring)
+        qid = seg.query_name
+        qlen = sum([j for i,j in seg.cigartuples if i != 2]) #len(readseg.loc[qid, 'seq'])##seg.template_length #seg.query_length
+        qst = seg.query_alignment_start
+        qen = seg.query_alignment_end
+        if (seg.is_reverse == True and m.group(3)) or \
+           (seg.is_reverse == False and m.group(1)):
+            if seg.is_reverse == True and 'H' in m.group(3):
+                clipped = int(m.group(3).rstrip('H'))
+                qst += clipped
+                qen += clipped
+            elif seg.is_reverse == False and 'H' in m.group(1):
+                clipped = int(m.group(1).rstrip('H'))
+                qst += clipped
+                qen += clipped
+            elif seg.is_reverse == True and 'S' in m.group(3):
+                clipped = int(m.group(3).rstrip('S'))
+                qen = clipped + (qen - qst)
+                qst = clipped
+
+        strand = '-' if seg.is_reverse else '+'
+        subj = seg.reference_name
+        slen = f.get_reference_length(subj) #seg.reference_length # "aligned length of the read on the reference genome" --> could be wrong field
+        sst = seg.reference_start
+        sen = seg.reference_end
+        cg = m.group(2).replace('M', '=')
+        data.append( (qid, qlen, qst, qen, strand, subj, slen, sst, sen, cg) )
+    return pd.DataFrame(data, columns=names)
 
 def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te, width=50):
     ref1_ss = []
@@ -592,35 +627,6 @@ def get_reference_sequences(row):
         ref2 = ref2.translate(compl)[::-1]
     return ref1, ref2
 
-#def get_ref1(row):    
-#    if strand == '+':
-#        ref1 = subj.seq[(sen - int(row.trim_ref1))                                : (sen - int(row.trim_ref1)) + int(row.max_ref_len)]
-#    else:
-#        ref1 = subj.seq[max((sst + int(row.trim_ref1)) - int(row.max_ref_len), 0) : (sst + int(row.trim_ref1))]
-#        ref1 = ref1.translate(compl)[::-1]
-#    
-#    return ref1
-#    
-#def get_ref2(row):
-#    if row.trans_order == 1.:
-#        subj = genome.loc[row.subj_gn]
-#        strand = row.strand_gn
-#        sst = row.sst_gn
-#        sen = row.sen_gn
-#    else:
-#        subj = adapter.loc[row.subj_ad]
-#        strand = row.strand_ad
-#        sst = row.sst_ad
-#        sen = row.sen_ad
-#    
-#    if strand == '+':
-#        ref2 = subj.seq[max((sst + int(row.trim_ref2)) - int(row.max_ref_len), 0) : (sst + int(row.trim_ref2))]
-#    else:
-#        ref2 = subj.seq[(sen - int(row.trim_ref2))                                : (sen - int(row.trim_ref2)) + int(row.max_ref_len)]
-#        ref2 = ref2.translate(compl)[::-1]
-#    
-#    return ref2
-
 def plot_norm_score_distribution(df, title, nbins=50):
     x, y = df.qlen, df.norm_score
     
@@ -709,16 +715,23 @@ if __name__ == '__main__':
     reads = pd.DataFrame.from_dict(reads, orient='index', columns=['seq'], dtype='string')
     logger.info("{:>11} reads in dataset\n".format(len(reads)))
 
-    if not args.adapter_paf:
+    if not args.adapter_alignment:
         logger.info(" - performing reads to adapter reference mapping ...")
         fq_fn = " ".join(fq_files)
         ref_fn = args.adapter
-        args.adapter_paf = "{}.adapter_alignment.paf".format(args.prefix)
-        exit_code = run_minimap2(ref_fn, fq_fn, args.adapter_paf)
+        args.adapter_alignment = "{}.adapter_alignment.paf".format(args.prefix)
+        exit_code = run_minimap2(ref_fn, fq_fn, args.adapter_alignment)
         if exit_code:
             logger.error('ERROR: adapter reference mapping failed with exit code', exit_code)
             exit(1)
-    ad_algn_df = parse_paf(args.adapter_paf, cigar=True)#.set_index('qid')
+    if args.adapter_alignment.endswith('.paf'):
+        ad_algn_df = parse_paf(args.adapter_alignment, cigar=True)#.set_index('qid')
+    elif args.adapter_alignment.endswith('.bam'):
+        ad_algn_df = parse_bam(args.adapter_alignment, reads)#.set_index('qid')
+    else:
+        logger.error('Alignment file type not supported: {}'.format(args.adapter_alignment))
+        exit(1)
+    breakpoint()
     logger.info("{:>11} {:>7} primary alignments against adapter sequence(s)".format(len(ad_algn_df), ""))
     c = sum(ad_algn_df.strand == '+')
     logger.info("{:>11} {:>5.1f} % against (+) strand".format(c, c/len(ad_algn_df)*100.))
@@ -727,15 +740,21 @@ if __name__ == '__main__':
     c = len(set(ad_algn_df.qid))
     logger.info("{:>11} {:>5.1f} % of reads align against any adapter sequence".format(c, c/len(reads)*100.))
 
-    if not args.genome_paf:
+    if not args.genome_alignment:
         logger.info(" - performing reads to genome reference mapping ...")
         ref_fn = args.genome
-        args.genome_paf = "{}.genome_alignment.paf".format(args.prefix)
-        exit_code = run_minimap2(ref_fn, fq_fn, args.genome_paf)
+        args.genome_alignment = "{}.genome_alignment.paf".format(args.prefix)
+        exit_code = run_minimap2(ref_fn, fq_fn, args.genome_alignment)
         if exit_code:
             logger.error('ERROR: adapter reference mapping failed with exit code', exit_code)
             exit(1)
-    gn_algn_df = parse_paf(args.genome_paf, cigar=True)#.set_index('qid')
+    if args.genome_alignment.endswith('.paf'):
+        gn_algn_df = parse_paf(args.genome_alignment, cigar=True)#.set_index('qid')
+    elif args.genome_alignment.endswith('.bam'):
+        gn_algn_df = parse_bam(args.genome_alignment, reads) #.set_index('qid')
+    else:
+        logger.error('Alignment file type not supported: {}'.format(args.genome_alignment))
+        exit(1)
     logger.info("{:>11} {:>7} primary alignments against genomic sequence(s)".format(len(gn_algn_df), ""))
     c = sum(gn_algn_df.strand == '+')
     logger.info("{:>11} {:>5.1f} % against (+) strand".format(c, c/len(gn_algn_df)*100.))
