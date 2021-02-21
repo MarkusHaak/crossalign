@@ -118,6 +118,8 @@ def get_args(args=None):
                                  in order to identify the exact transition point''',
                             type=int,
                             default=200)
+    main_group.add_argument('--allow_all_trimmed',
+                            action='store_true')
     main_group.add_argument('--sequence_type',
                             default='nucl',
                             choices=['nucl', 'aa'])
@@ -179,12 +181,13 @@ def run_minimap2(ref_fn, fq_fn, paf_fn):
     return os.system(cmd)
 
 def parse_paf(fn, cigar=False):
-    usecols = list(range(9))
+    usecols = list(range(11))
     names = ["qid", "qlen", "qst", "qen", "strand", "subj", 
-             "slen", "sst", "sen"]
+             "slen", "sst", "sen", "mlen", "blen"]
     dtype = {"qid": str, "qlen": np.int32, "qst": np.int32, 
              "qen": np.int32, "strand": str, "subj": str,
-             "slen": np.int32, "sst": np.int32, "sen": np.int32}
+             "slen": np.int32, "sst": np.int32, "sen": np.int32,
+             "mlen": np.int32, "blen": np.int32}
     converters = {}
     if cigar:
         usecols.append(22)
@@ -199,7 +202,7 @@ def parse_paf(fn, cigar=False):
 def parse_bam(fn, reads):
     f = pysam.AlignmentFile(fn, 'rb')
     names = ["qid", "qlen", "qst", "qen", "strand", "subj", 
-             "slen", "sst", "sen", "cg"]
+             "slen", "sst", "sen", "mlen", "blen", "cg"]
     data = []
     for seg in f.fetch():
         m = re.fullmatch(r"(\d+[HS])*((?:\d+[^HS\d])*)(\d+[HS])*", seg.cigarstring)
@@ -221,14 +224,19 @@ def parse_bam(fn, reads):
                 clipped = int(m.group(3).rstrip('S'))
                 qen = clipped + (qen - qst)
                 qst = clipped
-
+        mlen, blen = 0, 0
+        for opm in re.finditer(r"(\d+)(\D)", m.group(2)):
+            bases = int(opm.group(1))
+            if opm.group(2) in 'M=':
+                mlen += bases
+            blen += bases
         strand = '-' if seg.is_reverse else '+'
         subj = seg.reference_name
         slen = f.get_reference_length(subj) #seg.reference_length # "aligned length of the read on the reference genome" --> could be wrong field
         sst = seg.reference_start
         sen = seg.reference_end
         cg = m.group(2).replace('M', '=')
-        data.append( (qid, qlen, qst, qen, strand, subj, slen, sst, sen, cg) )
+        data.append( (qid, qlen, qst, qen, strand, subj, slen, sst, sen, mlen, blen, cg) )
     return pd.DataFrame(data, columns=names)
 
 def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te, width=50):
@@ -369,16 +377,19 @@ def traverse_cg(trimmed_query, trimmed_subject, bases, op):
         exit(1)
     return trimmed_query, trimmed_subject, False
 
-def traverse_cg_forwards(cg):
+def traverse_cg_forwards(cg, allow_all_trimmed):
     trimmed_query = 0
     trimmed_subject = 0
     for m in re.finditer(cg_pat, cg):
         trimmed_query, trimmed_subject, done = traverse_cg(trimmed_query, trimmed_subject, int(m.group(1)), m.group(2))
         if done:
             return trimmed_query, trimmed_subject
-    return np.nan, np.nan
+    if allow_all_trimmed == True:
+        return trimmed_query, trimmed_subject
+    else:
+        return np.nan, np.nan
 
-def traverse_cg_backwards(cg):
+def traverse_cg_backwards(cg, allow_all_trimmed):
     trimmed_query = 0
     trimmed_subject = 0
     cg_list = re.findall(cg_pat, cg)
@@ -386,9 +397,12 @@ def traverse_cg_backwards(cg):
         trimmed_query, trimmed_subject, done = traverse_cg(trimmed_query, trimmed_subject, int(bases), op)
         if done:
             return trimmed_query, trimmed_subject
-    return np.nan, np.nan
+    if allow_all_trimmed == True:
+        return trimmed_query, trimmed_subject
+    else:
+        return np.nan, np.nan
 
-def fix_qst(row):
+def fix_qst(row, allow_all_trimmed):
     if row.trans_order == 1.:
         cg = row.cg_ad
         qen = row.qen_ad
@@ -399,17 +413,17 @@ def fix_qst(row):
         strand = row.strand_gn
 
     if strand == '+':
-        trimmed_query, trimmed_subject = traverse_cg_backwards(cg)
+        trimmed_query, trimmed_subject = traverse_cg_backwards(cg, allow_all_trimmed)
         if trimmed_subject:
             return qen - trimmed_query, trimmed_subject
     else:
-        trimmed_query, trimmed_subject = traverse_cg_forwards(cg)
+        trimmed_query, trimmed_subject = traverse_cg_forwards(cg, allow_all_trimmed)
         if trimmed_subject:
             return qen - trimmed_query, trimmed_subject
     # unsuccessful
     return np.nan, np.nan
 
-def fix_qen(row):
+def fix_qen(row, allow_all_trimmed):
     if row.trans_order == 1.:
         cg = row.cg_gn
         qst = row.qst_gn
@@ -420,17 +434,17 @@ def fix_qen(row):
         strand = row.strand_ad
 
     if strand == '+':
-        trimmed_query, trimmed_subject = traverse_cg_forwards(cg)
+        trimmed_query, trimmed_subject = traverse_cg_forwards(cg, allow_all_trimmed)
         if trimmed_subject:
             return qst + trimmed_query, trimmed_subject
     else:
-        trimmed_query, trimmed_subject = traverse_cg_backwards(cg)
+        trimmed_query, trimmed_subject = traverse_cg_backwards(cg, allow_all_trimmed)
         if trimmed_subject:
             return qst + trimmed_query, trimmed_subject
     # unsuccessful
     return np.nan, np.nan
 
-def set_qst_and_qen(df, sel, fix=True):
+def set_qst_and_qen(df, sel, fix=True, allow_all_trimmed=False):
     df['trim_ref1'], df['trim_ref2'] = 0, 0
     cg_ad = df.cg_ad.str.replace('D|I', 'X')
     cg_gn = df.cg_gn.str.replace('D|I', 'X')
@@ -440,13 +454,10 @@ def set_qst_and_qen(df, sel, fix=True):
         logger.info("setting {} qst".format(trans_order))
         sel_ = ((df[strand_ref1] == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) | \
                ((df[strand_ref1] == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip)))
-        #sel_ = ((df[strand_ref1] == '+') & (df[cg_ref1].str.extract(r'(\d)=$').astype(np.float32) >= (args.wordsize + args.strip))) | \
-        #       ((df[strand_ref1] == '-') & (df[cg_ref1].str.extract(r'^(\d)=').astype(np.float32) >= (args.wordsize + args.strip)))
         df.loc[sel & (df.trans_order == trans_order) & sel_ , 'qst'] = df.loc[sel & (df.trans_order == trans_order) & sel_, ref1_qen]
         logger.info("setting {} qen".format(trans_order))
         sel_ = ((df[strand_ref2] == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip))) | \
                ((df[strand_ref2] == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) 
-        #       ((df[strand_ref2] == '-') & (df[cg_ref2].str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip)))
         df.loc[sel & (df.trans_order == trans_order) & sel_ , 'qen'] = df.loc[sel & (df.trans_order == trans_order) & sel_, ref2_qst]
     
     sel_ = sel & df.qst.notnull()
@@ -460,12 +471,12 @@ def set_qst_and_qen(df, sel, fix=True):
     if fix:
         logger.info('need to fix {} query starts'.format(sum(sel & df.qst.isnull())))
         df.loc[sel & df.qst.isnull(), ['qst', 'trim_ref1']] = pd.DataFrame(
-            df.loc[sel & df.qst.isnull()].parallel_apply(lambda row: fix_qst(row), axis=1).values.tolist(), 
+            df.loc[sel & df.qst.isnull()].parallel_apply(lambda row: fix_qst(row, allow_all_trimmed), axis=1).values.tolist(), 
             index=df.loc[sel & df.qst.isnull()].index, columns=['qst', 'trim_ref1']
         )
         logger.info('need to fix {} query ends'.format(sum(sel & df.qen.isnull())))
         df.loc[sel & df.qen.isnull(), ['qen', 'trim_ref2']] = pd.DataFrame(
-            df.loc[sel & df.qen.isnull()].parallel_apply(lambda row: fix_qen(row), axis=1).values.tolist(), 
+            df.loc[sel & df.qen.isnull()].parallel_apply(lambda row: fix_qen(row, allow_all_trimmed), axis=1).values.tolist(), 
             index=df.loc[sel & df.qen.isnull()].index, columns=['qen', 'trim_ref2']
         )
     return df
@@ -731,7 +742,7 @@ if __name__ == '__main__':
     else:
         logger.error('Alignment file type not supported: {}'.format(args.adapter_alignment))
         exit(1)
-    breakpoint()
+    
     logger.info("{:>11} {:>7} primary alignments against adapter sequence(s)".format(len(ad_algn_df), ""))
     c = sum(ad_algn_df.strand == '+')
     logger.info("{:>11} {:>5.1f} % against (+) strand".format(c, c/len(ad_algn_df)*100.))
@@ -805,7 +816,7 @@ if __name__ == '__main__':
     # deleting non-potential transitions at this point so that all procentual values are with respect to potential ones only
     logger.info(" - deleting all entries from dataframe that are not potential transitions")
     dtypes = {"{}_{}".format(key, suffix):np.int32 for suffix in ['ad', 'gn'] \
-              for key in ["qlen","qst","qen","slen","sst","sen","mlen","blen","mapq"]}
+              for key in ["qlen","qst","qen","slen","sst","sen","mlen","blen"]}
     df = df.drop(df.index[np.logical_not(sel)]).astype(dtypes)
     sel = df.subj_ad.notnull() & \
           df.subj_gn.notnull()
@@ -832,7 +843,7 @@ if __name__ == '__main__':
 
     # determine query seq start and end in read coordinates
     logger.info(" - determine query seq start and end in read coordinates")
-    df = set_qst_and_qen(df, sel)
+    df = set_qst_and_qen(df, sel, fix=True, allow_all_trimmed=args.allow_all_trimmed)
     c = sum(sel & (df.qst.isnull() | df.qen.isnull()))
     logger.info('{:>11} {:>5.1f} % of remaining potential transpositions had < {} matching terminal bases'.format(c, c/sum(sel)*100., args.wordsize))
     sel &= df.qst.notnull() & df.qen.notnull()
