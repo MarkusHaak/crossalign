@@ -64,7 +64,7 @@ Following is a short description of all output fields in the <prefix>.alignment.
 
 ```
 rid		: read sequence id 
-trans_order	: order of reference mappings in the read sequence, either "1" (5' adapter (+/-) -> genome (+/-) 3') or "-1" (5' genome (+/-) -> adapter (+/-) 3')
+order	: order of reference mappings in the read sequence, either "1" (5' adapter (+/-) -> genome (+/-) 3') or "-1" (5' genome (+/-) -> adapter (+/-) 3')
 subj_ad		: sequence id of the aligned adapter reference sequence 
 strand_ad	: aligned strand of the adapter reference sequence (+/-)
 subj_gn		: sequence id of the aligned genome reference sequence 
@@ -94,7 +94,7 @@ adapter_seq    :  5' ATATAGCGCG 3'
 genome_seq     :  5' CCGGCTTAAT 3'
 ```
 
-| read sequence | trans_order | strand_ad | strand_gn | ts | te 
+| read sequence | order | strand_ad | strand_gn | ts | te 
 | ------------- |-:|:-:|:-:|-:|-:|
 | ```ATATATTAAT```    | 1 | + | + | 5 | 5
 | ```ATATAGCCGG```    | 1 | + | - | 5 | 5
@@ -112,8 +112,8 @@ In addition, a binary <prefix>.alignment.df.pkl file is created, containing the 
 >>> from crossalign import *
 >>> read_sequence_data("reads.fastq", "adapter.fasta", "genome.fasta")
 >>> df = pd.read_pickle("prefix.alignment.df.pkl").explode('transitions')
->>> sel =  (df.trans_order == 1) & (df.strand_ad == '+')     # ref1 ('+')   -> <refX> (+/-)
->>> sel |= (df.trans_order == -1) & (df.strand_ad == '-')    # <refX> (+/-) -> ref1 ('-')
+>>> sel =  (df.order == 1) & (df.strand_ad == '+')     # ref1 ('+')   -> <refX> (+/-)
+>>> sel |= (df.order == -1) & (df.strand_ad == '-')    # <refX> (+/-) -> ref1 ('-')
 >>> sel &= (df.subj_ad == "ref1")
 >>> d_sel = df.loc[sel].explode('transitions')
 >>> d_sel = d_sel.loc[(d_sel.transitions.str[0] == 234423)]

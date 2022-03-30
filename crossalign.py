@@ -308,13 +308,13 @@ def main(args):
     logger.info('{:>11} {:>5.1f} % reads remaining that contain potential transitions between adapter and genomic sequence.'.format(c, c/len(reads)*100.))
 
     # identify rows describing a transition from adapter to genomic sequence or vise versa
-    df.loc[sel,'trans_order'] = 0 # qst_ad == qst_gn
-    df.loc[sel & (df.qst_ad < df.qst_gn), 'trans_order'] = 1 # adapter -> genome
-    df.loc[sel & (df.qst_ad > df.qst_gn), 'trans_order'] = -1 # genome -> adapter
+    df.loc[sel,'order'] = 0 # qst_ad == qst_gn
+    df.loc[sel & (df.qst_ad < df.qst_gn), 'order'] = 1 # adapter -> genome
+    df.loc[sel & (df.qst_ad > df.qst_gn), 'order'] = -1 # genome -> adapter
 
     # remove pairs of alignments which are too distant from one another
-    sel_ = (sel & (df.trans_order ==  1.) & ((df.qst_gn - df.qen_ad) <= args.max_dist)) | \
-           (sel & (df.trans_order == -1.) & ((df.qst_ad - df.qen_gn) <= args.max_dist))
+    sel_ = (sel & (df.order ==  1.) & ((df.qst_gn - df.qen_ad) <= args.max_dist)) | \
+           (sel & (df.order == -1.) & ((df.qst_ad - df.qen_gn) <= args.max_dist))
     c = sum(sel & np.logical_not(sel_))
     logger.info('{:>11} {:>5.1f} % transitions have local alignments that are >{} nt apart from each other'.format(c, c/len(df)*100., args.max_dist))
     sel = sel_
@@ -409,7 +409,7 @@ def main(args):
     df = df.loc[sel].explode('transitions')
     for i,key in enumerate(["ts", "te", "fna_ref1", "fa_ref2", "query_ts", "query_te", "cigar"]):
         df[key] = df.transitions.str[i]
-    df = df[['rid', 'trans_order', 'subj_ad', 'strand_ad', 'subj_gn', 'strand_gn', 'ts', 'te',
+    df = df[['rid', 'order', 'subj_ad', 'strand_ad', 'subj_gn', 'strand_gn', 'ts', 'te',
             'cigar', 'score', 'norm_score', 'amb', 
             'qst_ad', 'qen_ad', 'sst_ad', 'sen_ad', 'qst_gn', 'qen_gn', 'sst_gn', 'sen_gn']]
     df.to_csv(fn, sep=",", index=False)
@@ -745,7 +745,7 @@ def traverse_cg_backwards(cg):
         return np.nan, np.nan
 
 def fix_qst(row):
-    if row.trans_order == 1.:
+    if row.order == 1.:
         cg = row.cg_ad
         qen = row.qen_ad
         strand = row.strand_ad
@@ -766,7 +766,7 @@ def fix_qst(row):
     return np.nan, np.nan
 
 def fix_qen(row):
-    if row.trans_order == 1.:
+    if row.order == 1.:
         cg = row.cg_gn
         qst = row.qst_gn
         strand = row.strand_gn
@@ -792,16 +792,16 @@ def set_qst_and_qen(df, sel, fix=True):
     cg_gn = df.cg_gn.str.replace('D|I', 'X', regex=True)
 
     # set query start and end for trivial cases
-    for trans_order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, ref1_qen, ref2_qst in [( 1., 'strand_ad', 'strand_gn', cg_ad, cg_gn, 'qen_ad', 'qst_gn'),
-                                                                                        (-1., 'strand_gn', 'strand_ad', cg_gn, cg_ad, 'qen_gn', 'qst_ad')]:
-        logger.info("setting {} qst".format(trans_order))
+    for order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, ref1_qen, ref2_qst in [( 1., 'strand_ad', 'strand_gn', cg_ad, cg_gn, 'qen_ad', 'qst_gn'),
+                                                                                  (-1., 'strand_gn', 'strand_ad', cg_gn, cg_ad, 'qen_gn', 'qst_ad')]:
+        logger.info("setting {} qst".format(order))
         sel_ = ((df[strand_ref1] == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) | \
                ((df[strand_ref1] == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip)))
-        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'qst'] = df.loc[sel & (df.trans_order == trans_order) & sel_, ref1_qen]
-        logger.info("setting {} qen".format(trans_order))
+        df.loc[sel & (df.order == order) & sel_ , 'qst'] = df.loc[sel & (df.order == order) & sel_, ref1_qen]
+        logger.info("setting {} qen".format(order))
         sel_ = ((df[strand_ref2] == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip))) | \
                ((df[strand_ref2] == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) 
-        df.loc[sel & (df.trans_order == trans_order) & sel_ , 'qen'] = df.loc[sel & (df.trans_order == trans_order) & sel_, ref2_qst]
+        df.loc[sel & (df.order == order) & sel_ , 'qen'] = df.loc[sel & (df.order == order) & sel_, ref2_qst]
     
     sel_ = sel & df.qst.notnull()
     df.loc[sel_, 'qst'] -= args.strip
@@ -939,7 +939,7 @@ def c_align_row(row):
     return row
 
 def set_references(df, sel):
-    sel_ = sel & (df.trans_order == 1.)
+    sel_ = sel & (df.order == 1.)
     if sel_.any():
         df.loc[sel_, 'subj_ref1']   = df.loc[sel_, 'subj_ad']
         df.loc[sel_, 'strand_ref1'] = df.loc[sel_, 'strand_ad']
@@ -949,7 +949,7 @@ def set_references(df, sel):
         df.loc[sel_, 'strand_ref2'] = df.loc[sel_, 'strand_gn']
         df.loc[sel_, 'sst_ref2']    = df.loc[sel_, 'sst_gn']
         df.loc[sel_, 'sen_ref2']    = df.loc[sel_, 'sen_gn']
-    sel_ = sel & (df.trans_order == -1.)
+    sel_ = sel & (df.order == -1.)
     if sel_.any():
         df.loc[sel_, 'subj_ref1']   = df.loc[sel_, 'subj_gn']
         df.loc[sel_, 'strand_ref1'] = df.loc[sel_, 'strand_gn']
@@ -980,7 +980,7 @@ def set_references(df, sel):
     return df
 
 def get_reference_sequences(row):
-    if row.trans_order == 1.:
+    if row.order == 1.:
         ref1 = adapter.loc[row.subj_ref1].seq[int(row.sst_ref1) : int(row.sen_ref1)]
         ref2 = genome.loc[row.subj_ref2].seq[int(row.sst_ref2) : int(row.sen_ref2)]
     else:
