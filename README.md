@@ -36,7 +36,7 @@ python tests.py
 In the most basic usage case, just pass a fastq file containing the sequencing reads and two (multiple-) fasta files with two sets of reference sequences to crossalign. An optional output prefix is specified. The names "adapter" and "genome" were chosen due to the original application case and are of no importance.
 
 ```
-python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out
+> python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out
 ```
 
 The script will output alignment results against the two reference sets (out.adapter_alignment.paf, out.genome_alignment.paf) and the crossalign results as text output (out.alignment.csv) and as a pickled pandas dataframe (out.alignment.df.pkl) containing all information.
@@ -44,19 +44,18 @@ The script will output alignment results against the two reference sets (out.ada
 The user can choose from minimap2 and blastn (for short sequence matches) as the alignment tool for the initial alignments (--adapter_alignment_tool, --genome_alignment_tool). Alternatively, the alignments can be performed separately and the results passed to crossalign as .paf or sorted and indexed .bam files:
 
 ```
-python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out --adapter_alignment ad_alignment.bam --adapter_alignment gn_alignment.bam 
+> python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out --adapter_alignment ad_alignment.bam --genome_alignment gn_alignment.bam 
 ```
 
 For applications where the transition site(s) is known for certain reference sequences, e.g. the end of an inverted repeat, but unknown for the other set of reference sequences, e.g. a genome, it is useful to pass a list of "sites of interest" to crossalign.
 	
 ```
-cat soi.tsv
-ref_seq_1	+	234
-
-python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out --sites_of_interest soi.tsv
+> cat soi.tsv
+ref1	+	234
+> python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out --sites_of_interest soi.tsv
 ```
 
-In this case, crossalign would return only transitions from the (+) strand of the reference sequence with id ref_seq_1 at site 234 to any site in any other reference sequence. These could be reads with transitions of the following categories: 5' ref_seq_1 (+) @ 234 -> <ref_seq_X> (+/-) @ <N> 3' OR 5' <ref_seq_X> (+/-) @ <N> -> ref_seq_1 (-) @ 234 3'
+In this case, crossalign would return only transitions from the (+) strand of the reference sequence with id "ref1" at site 234 to any site in any other reference sequence. These could be reads with transitions of the following categories: 5' ref1 (+) @ 234 -> <refX> (+/-) @ <N> 3' OR 5' <refX> (+/-) @ <N> -> ref1 (-) @ 234 3'
 
 ## output
 
@@ -64,17 +63,23 @@ Following is a short description of all output fields in the <prefix>.alignment.
 
 ```
 rid		: read sequence id 
-order	: order of reference mappings in the read sequence, either "1" (5' adapter (+/-) -> genome (+/-) 3') or "-1" (5' genome (+/-) -> adapter (+/-) 3')
+order		: order of reference mappings in the read sequence, 
+		  either "1" (5' adapter (+/-) -> genome (+/-) 3') 
+		  or "-1" (5' genome (+/-) -> adapter (+/-) 3')
 subj_ad		: sequence id of the aligned adapter reference sequence 
 strand_ad	: aligned strand of the adapter reference sequence (+/-)
 subj_gn		: sequence id of the aligned genome reference sequence 
 strand_gn	: aligned strand of the genome reference sequence (+/-)
-ts		: transition start, 0-based index of first non-aligning base (+) or last aligning base (-) in the upstream reference sequence
-te		: transition start, 0-based index (+) or 1-indexed position (-) of first aligning base in the downstream reference sequence
+ts		: transition start, 0-based index of first non-aligning base (+) 
+		  or last aligning base (-) in the upstream reference sequence
+te		: transition start, 0-based index (+) or 1-based index (-) 
+		  of first aligning base in the downstream reference sequence
 cigar		: CIGAR string produced by crossalign
 score		: score of the cross-alignment
-norm_score	: length-normalized alignment score:  score / (qlen * match) where "qlen" is the query length and "match" is the match reward
-amb		: ambiguity flag, True if more than one highest scoring alignment with different transitions is produced
+norm_score	: length-normalized alignment score:  score / (qlen * match) 
+		  where "qlen" is the query length and "match" is the match reward
+amb		: ambiguity flag, True if more than one highest scoring alignment 
+		  with different transitions is produced
 qst_ad		: query start of the initial adapter reference mapping
 qen_ad		: query end of the initial adapter reference mapping
 sst_ad		: subject start of the initial adapter reference mapping
@@ -85,7 +90,7 @@ sst_gn		: subject start of the initial genome reference mapping
 sen_gn		: subject end of the initial genome reference mapping
 ```
 
-The following list of examples of all possible transition order and strand combinations are given to clarify which values "ts" and "te" will take on for certain transitions.
+The following list of examples of all possible transition orders and strand combinations are given to clarify which values "ts" and "te" will take on for certain transitions.
 Let the reference sequences in the adapter and genome set be the following 10 bp sequences:
 
 ```
