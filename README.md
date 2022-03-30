@@ -31,7 +31,7 @@ Test that everything works as expected.
 python tests.py
 ```
 
-## Usage
+## usage
 
 In the most basic usage case, just pass a fastq file containing the sequencing reads and two (multiple-) fasta files with two sets of reference sequences to crossalign. An optional output prefix is specified. The names "adapter" and "genome" were chosen due to the original application case and are of no importance.
 
@@ -58,7 +58,7 @@ python crossalign.py --reads reads.fastq --adapter references1.fasta --genome re
 
 In this case, crossalign would return only transitions from the (+) strand of the reference sequence with id ref_seq_1 at site 234 to any site in any other reference sequence. These could be reads with transitions of the following categories: 5' ref_seq_1 (+) @ 234 -> <ref_seq_X> (+/-) @ <N> 3' OR 5' <ref_seq_X> (+/-) @ <N> -> ref_seq_1 (-) @ 234 3'
 
-## Output
+## output
 
 Following is a short description of all output fields in the <prefix>.alignment.csv text output:
 
@@ -96,7 +96,7 @@ genome_seq     :  5' CCGGCTTAAT 3'
 
 | read sequence | trans_order | strand_ad | strand_gn | ts | te 
 | ------------- |-:|:-:|:-:|-:|-:|
-| ```ATATATTAAT``    | 1 | + | + | 5 | 5
+| ```ATATATTAAT```    | 1 | + | + | 5 | 5
 | ```ATATAGCCGG```    | 1 | + | - | 5 | 5
 | ```CGCGCGCCGG```    | 1 | - | - | 5 | 5
 | ```CGCGCTTAAT```    | 1 | - | + | 5 | 5
@@ -106,15 +106,15 @@ genome_seq     :  5' CCGGCTTAAT 3'
 | ```ATTAAGCGCG```    | -1 | - | + | 5 | 5
 
 
-In addition, a binary <prefix>.alignment.df.pkl file is created, containing the pandas DataFrame with all gathered information. This can be used for more detailed analysis. The following code snippet shows how to read all sequence data and the DataFrame in a python interpreter and pretty-print the transitions from location 234,423 on the (+) strand of the adapter reference sequence "some_ref_1":
+In addition, a binary <prefix>.alignment.df.pkl file is created, containing the pandas DataFrame with all gathered information. This can be used for more detailed analysis. As an example, the following code snippet shows how to read all sequence data and the DataFrame in a python interpreter and pretty-print the transitions at location 234,423 on the (+) strand of the adapter reference sequence with id "ref1":
 
 ```
 >>> from crossalign import *
 >>> read_sequence_data("reads.fastq", "adapter.fasta", "genome.fasta")
 >>> df = pd.read_pickle("prefix.alignment.df.pkl").explode('transitions')
->>> sel =  (df.trans_order == 1) & (df.strand_ad == '+')     # ref_seq_1 ('+')   -> <ref_seq_X> (+/-)
->>> sel |= (df.trans_order == -1) & (df.strand_ad == '-')    # <ref_seq_X> (+/-) -> ref_seq_1 ('-')
->>> sel &= (df.subj_ad == "some_ref_1")
+>>> sel =  (df.trans_order == 1) & (df.strand_ad == '+')     # ref1 ('+')   -> <refX> (+/-)
+>>> sel |= (df.trans_order == -1) & (df.strand_ad == '-')    # <refX> (+/-) -> ref1 ('-')
+>>> sel &= (df.subj_ad == "ref1")
 >>> d_sel = df.loc[sel].explode('transitions')
 >>> d_sel = d_sel.loc[(d_sel.transitions.str[0] == 234423)]
 >>> verbose(d_sel)
