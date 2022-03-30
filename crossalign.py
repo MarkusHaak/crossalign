@@ -141,8 +141,8 @@ def parse_args(args_=None):
     main_group.add_argument('--processes',
                             type=int,
                             default=6)
-    main_group.add_argument('--progress',
-                            help='show progress bars',
+    main_group.add_argument('--progress', # somehow often leads to a crash!
+                            help='show progress bars. May lead to crashes, not recoomended!',
                             action='store_true')
     main_group.add_argument('-q','--quiet',
                             help='limit output to warning and error messages',
@@ -156,7 +156,7 @@ def parse_args(args_=None):
     align_group.add_argument('--mismatch',
                              help='mismatch penalty',
                              type=int,
-                             default=-2)
+                             default=-3)
     align_group.add_argument('--gap_open',
                              help='gap open penalty',
                              type=int,
@@ -241,8 +241,6 @@ def main(args):
     else:
         logger.error('Alignment file type not supported: {}'.format(args.adapter_alignment))
         exit(1)
-    logger.info('- change adapter cigar operator M to either = or X:')
-    ad_algn_df = ad_algn_df.parallel_apply(lambda row: row_cg_to_eqx(row, reads, adapter), axis=1)
     
     logger.info("{:>11} {:>7} primary alignments against adapter sequence(s)".format(len(ad_algn_df), ""))
     c = sum(ad_algn_df.strand == '+')
@@ -252,10 +250,17 @@ def main(args):
     c = len(set(ad_algn_df.qid))
     logger.info("{:>11} {:>5.1f} % of reads align against any adapter sequence".format(c, c/len(reads)*100.))
 
+    if len(ad_algn_df) == 0:
+        logger.error("No alignments against adapter sequences produced.")
+        exit(1)
+
+    logger.info('- change adapter cigar operator M to either = or X:')
+    ad_algn_df = ad_algn_df.parallel_apply(lambda row: row_cg_to_eqx(row, reads, adapter), axis=1)
+
     if not args.genome_alignment:
         logger.info(" - performing reads to genome reference mapping ...")
         ref_fn = args.genome
-        if args.adapter_alignment_tool == 'minimap2':
+        if args.genome_alignment_tool == 'minimap2':
             args.genome_alignment = "{}.genome_alignment.paf".format(args.prefix)
             exit_code = run_minimap2(ref_fn, fq_fn, args.genome_alignment)
         else:
@@ -271,8 +276,6 @@ def main(args):
     else:
         logger.error('Alignment file type not supported: {}'.format(args.genome_alignment))
         exit(1)
-    logger.info('- change genome cigar operator M to either = or X:')
-    gn_algn_df = gn_algn_df.parallel_apply(lambda row: row_cg_to_eqx(row, reads, genome), axis=1)
 
     logger.info("{:>11} {:>7} primary alignments against genomic sequence(s)".format(len(gn_algn_df), ""))
     c = sum(gn_algn_df.strand == '+')
@@ -281,6 +284,13 @@ def main(args):
     logger.info("{:>11} {:>5.1f} % against (-) strand".format(c, c/len(gn_algn_df)*100.))
     c = len(set(gn_algn_df.qid))
     logger.info("{:>11} {:>5.1f} % of reads align against any genome sequence".format(c, c/len(reads)*100.))
+
+    if len(gn_algn_df) == 0:
+        logger.error("No alignments against genome sequences produced.")
+        exit(1)
+
+    logger.info('- change genome cigar operator M to either = or X:')
+    gn_algn_df = gn_algn_df.parallel_apply(lambda row: row_cg_to_eqx(row, reads, genome), axis=1)
 
     if not (args.mean and args.std):
         logger.info(" - determining statistics about per-base difference ([align. subject len] - [align. query len]) / [align. query len] from genome alignments")
@@ -393,6 +403,11 @@ def main(args):
         c = sum(sel & (upper >= df.norm_score) & (df.norm_score > lower))
         logger.info('{:>11} {:>5.1f} % with {} >= normed score > {}'.format(c, c/sum(sel)*100., upper, lower))
 
+    c = sum(df.loc[sel].transitions.str.len() > 1)
+    logger.info('{:>11} {:>5.1f} % of transitions are flagged as ambiguous (>1 highest-score alignment)'.format(c, c/len(df.loc[sel])*100.))
+    c = df.loc[sel].transitions.str.len().sum()
+    logger.info('{:>11} hightest-score alignments were produced in total'.format(c))
+
     if args.plot:
         plot_norm_score_distribution(df[sel], "all data")
 
@@ -407,6 +422,7 @@ def main(args):
     fn = args.prefix + ".alignment.csv"
     logger.info(' - writing comma-seperated values text output to {}'.format(fn))
     df = df.loc[sel].explode('transitions')
+
     for i,key in enumerate(["ts", "te", "fna_ref1", "fa_ref2", "query_ts", "query_te", "cigar"]):
         df[key] = df.transitions.str[i]
     df = df[['rid', 'order', 'subj_ad', 'strand_ad', 'subj_gn', 'strand_gn', 'ts', 'te',
@@ -599,7 +615,6 @@ def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te,
                 ref2_op.append('|')
                 ref2_loc += 1
             else:
-                #ref2_ss.append(' ')
                 ref2_op.append(' ')
             quer_ss.append(query[query_loc])
             query_loc += 1
@@ -620,7 +635,6 @@ def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te,
                 ref2_op.append('X')
                 ref2_loc += 1
             else:
-                #ref2_ss.append(' ')
                 ref2_op.append(' ')
             quer_ss.append(query[query_loc])
             query_loc += 1
@@ -628,7 +642,6 @@ def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te,
             if query_loc < query_te or ref1_loc < r1_fna:
                 ref1_ss.append('-')
                 ref1_op.append('I')
-                #ref1_loc += 1
             else:
                 if ref1_loc < len(ref1):
                     ref1_ss.append(ref1[ref1_loc].lower())
@@ -639,9 +652,7 @@ def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te,
             if query_loc >= query_ts and ref1_loc >= r1_fna:
                 ref2_ss.append('-')
                 ref2_op.append('I')
-                #ref2_loc += 1
             else:
-                #ref2_ss.append(' ')
                 ref2_op.append(' ')
             quer_ss.append(query[query_loc])
             query_loc += 1
@@ -663,10 +674,8 @@ def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te,
                     ref2_op.append('D')
                     ref2_loc += 1
                 else:
-                    #ref2_ss.append(' ')
                     ref2_op.append(' ')
             quer_ss.append('-')
-            #query_loc += 
 
     to_prepend = []
     for i in range(1,len(ref2_op) - len(ref2_ss) +1):

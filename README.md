@@ -10,30 +10,30 @@ When sequencing transposon mutant libraries, ligation products or DNA samples of
 
 ## installation
 
-Create an anaconda3 environment with all the required software.
-
-```
-conda env create -f environment.yml
-conda activate crossalign
-```
-
 Clone and build crossalign.
 
 ```
-git clone https://github.com/MarkusHaak/crossalign.git
-cd crossalign
-make
+> git clone https://github.com/MarkusHaak/crossalign.git
+> cd crossalign
+> make
+```
+
+Create an anaconda3 environment with all the required software.
+
+```
+> conda env create -f environment.yml
+> conda activate crossalign
 ```
 
 Test that everything works as expected.
 
 ```
-python tests.py
+> python tests.py
 ```
 
 ## usage
 
-In the most basic usage case, just pass a fastq file containing the sequencing reads and two (multiple-) fasta files with two sets of reference sequences to crossalign. An optional output prefix is specified. The names "adapter" and "genome" were chosen due to the original application case and are of no importance.
+In the most basic usage case, just pass a fastq file containing the sequencing reads and two (multiple-) fasta files with two sets of reference sequences to crossalign. An optional output prefix is specified. The names "adapter" and "genome" were chosen based on the original application purpose of the script and are of no importance.
 
 ```
 > python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out
@@ -41,10 +41,12 @@ In the most basic usage case, just pass a fastq file containing the sequencing r
 
 The script will output alignment results against the two reference sets (out.adapter_alignment.paf, out.genome_alignment.paf) and the crossalign results as text output (out.alignment.csv) and as a pickled pandas dataframe (out.alignment.df.pkl) containing all information.
 
-The user can choose from minimap2 and blastn (for short sequence matches) as the alignment tool for the initial alignments (--adapter_alignment_tool, --genome_alignment_tool). Alternatively, the alignments can be performed separately and the results passed to crossalign as .paf or sorted and indexed .bam files:
+The user can choose from minimap2 and blastn (for short sequence matches) as the alignment tool for the initial alignments (--adapter_alignment_tool, --genome_alignment_tool). For short reference sequences or if the reference alignments are expected to be short (e.g. <75 bp), I recoomend to use blastn instead of minimap2.
+
+Alternatively, the alignments can be performed separately and the results passed to crossalign as .paf or sorted and indexed .bam files.
 
 ```
-> python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out --adapter_alignment ad_alignment.bam --genome_alignment gn_alignment.bam 
+> python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out --adapter_alignment ad_alignment.bam --genome_alignment gn_alignment.bam
 ```
 
 For applications where the transition site(s) is known for certain reference sequences, e.g. the end of an inverted repeat, but unknown for the other set of reference sequences, e.g. a genome, it is useful to pass a list of "sites of interest" to crossalign.
@@ -56,6 +58,8 @@ ref1	+	234
 ```
 
 In this case, crossalign would return only transitions from the (+) strand of the reference sequence with id "ref1" at site 234 to any site in any other reference sequence. These could be reads with transitions of the following categories: 5' ref1 (+) @ 234 -> <refX> (+/-) @ <N> 3' OR 5' <refX> (+/-) @ <N> -> ref1 (-) @ 234 3'
+
+All command line arguments and their description can be displayed with --help .
 
 ## output
 
@@ -142,3 +146,9 @@ ref2:  ttaaattaatgcGGCTA
 
 ...
 ```
+
+## known issues
+
+For whatever reason, showing progress bars with --progress often leads to a crash of the program. The use of this argument is therefore not recommended.
+
+The crossalignment step is currently not parallelized. On the system where it was tested, it performed approx. 100,000 alignments per minute.
