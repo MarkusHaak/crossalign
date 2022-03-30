@@ -5,3 +5,7 @@ align
 ctypesTest.py
 *tmp*
 *.o
+tests_outputs
+*.ipynb
+__pycache__
+*.bam

@@ -1,0 +1,19 @@
+name: crossalign
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - blast=2.12.0
+  - biopython=1.79
+  - matplotlib
+  - minimap2=2.24
+  - numpy=1.22.3
+  - pandarallel
+  - pandas=1.2.1
+  - pysam=0.18.0
+  - python=3.9.12
+  - scipy
+  - samtools=1.15
+  - seqtk
+  - tqdm
