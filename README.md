@@ -57,13 +57,13 @@ ref1	+	234
 > python crossalign.py --reads reads.fastq --adapter references1.fasta --genome references2.fasta --prefix out --sites_of_interest soi.tsv
 ```
 
-In this case, crossalign would return only transitions from the (+) strand of the reference sequence with id "ref1" at site 234 to any site in any other reference sequence. These could be reads with transitions of the following categories: 5' ref1 (+) @ 234 -> <refX> (+/-) @ <N> 3' OR 5' <refX> (+/-) @ <N> -> ref1 (-) @ 234 3'
+In this case, crossalign would return only transitions from the (+) strand of the reference sequence with id "ref1" at site 234 to any site in any other reference sequence. These could be reads with transitions of the following categories: 5' ref1 (+) @ 234 -> refX (+/-) @ <N> 3' OR 5' refX (+/-) @ <N> -> ref1 (-) @ 234 3'
 
 All command line arguments and their description can be displayed with --help .
 
 ## output
 
-Following is a short description of all output fields in the <prefix>.alignment.csv text output:
+Following is a short description of all output fields in the prefix.alignment.csv text output:
 
 ```
 rid		: read sequence id 
@@ -115,7 +115,7 @@ genome_seq     :  5' CCGGCTTAAT 3'
 | ```ATTAAGCGCG```    | -1 | - | + | 5 | 5
 
 
-In addition, a binary <prefix>.alignment.df.pkl file is created, containing the pandas DataFrame with all gathered information. This can be used for more detailed analysis. As an example, the following code snippet shows how to read all sequence data and the DataFrame in a python interpreter and pretty-print the transitions at location 234,423 on the (+) strand of the adapter reference sequence with id "ref1":
+In addition, a binary prefix.alignment.df.pkl file is created, containing the pandas DataFrame with all gathered information. This can be used for more detailed analysis. As an example, the following code snippet shows how to read all sequence data and the DataFrame in a python interpreter and pretty-print the transitions at location 234,423 on the (+) strand of the adapter reference sequence with id "ref1":
 
 ```
 >>> from crossalign import *

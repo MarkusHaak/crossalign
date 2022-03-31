@@ -138,7 +138,7 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         self.assertEqual(transitions_list[0][-1], "1D4=1D", 'wrong cigar string')
 
     def test_align_7(self):
-        """high ambiguity if mismatch == (gap open + gap extension)"""
+        """high ambiguity"""
         free_gap = [True, True]
         query_seq = "GATGATCC"
         ref1      = "GAGACGG"
