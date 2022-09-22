@@ -203,6 +203,8 @@ def main(args):
                             format='%(asctime)s %(levelname)s: %(message)s', datefmt='%H:%M:%S')
     logger = logging.getLogger('main')
 
+    ct.CDLL(clib).init(args.sequence_type == 'nucl')
+    init_ctypes_arrays(args)
     pandarallel.initialize(nb_workers=args.processes, progress_bar=(args.progress and not args.quiet), verbose=(not args.quiet))
 
     # read sequence data
@@ -386,8 +388,8 @@ def main(args):
     df = set_references(df, sel)
 
     logger.info(' - aligning')
-    ct.CDLL(clib).init(args.sequence_type == 'nucl')
-    init_ctypes_arrays(args)
+    #ct.CDLL(clib).init(args.sequence_type == 'nucl')
+    #init_ctypes_arrays(args)
 
     # start the actual alignments
     df = df.parallel_apply(lambda row: c_align_row(row), axis=1)
@@ -909,7 +911,7 @@ def c_align_row(row):
     free_gap = [True, True]
     if args.sites_of_interest:
         # align only those reads that span a site of interest
-        hit = False
+        soi_hit = False
         if (row.subj_ref1, row.strand_ref1) in soi.index:
             d = soi.loc[[(row.subj_ref1, row.strand_ref1)]]
             d = d.loc[(row.sst_ref1 <= d.site) & (d.site <= row.sen_ref1)]
@@ -918,7 +920,7 @@ def c_align_row(row):
                     row.sen_ref1 = d.site[0]
                 else:
                     row.sst_ref1 = d.site[0]
-                hit ^= True
+                soi_hit ^= True
                 free_gap[0] = False
         opp_strand_ref2 = '+' if row.strand_ref2 == '-' else '-'
         if (row.subj_ref2, opp_strand_ref2) in soi.index:
@@ -929,12 +931,12 @@ def c_align_row(row):
                     row.sst_ref2 = d.site[0]
                 else:
                     row.sen_ref2 = d.site[0]
-                hit ^= True
+                soi_hit ^= True
                 free_gap[1] = False
-        if hit == False:
+        if soi_hit == False:
             return row
 
-    # determine query and reference seqeunces
+    # determine query and reference sequences
     query_seq = reads.loc[row.rid].seq[int(row.qst) : int(row.qen)]
     ref1, ref2 = get_reference_sequences(row)
 
@@ -1041,6 +1043,7 @@ def plot_norm_score_distribution(df, title, nbins=50):
     plt.show()
 
 def matches_to_eqx(cigar, subject, query):
+    '''Replaces "M" characters in CIGAR string with characters "="" for match or "X" for mismatch'''
     new_cigar_ops = []
     sloc, qloc = 0, 0
     for m in re.finditer(r'(\d+)(\D)', cigar):
@@ -1092,7 +1095,87 @@ def row_cg_to_eqx(row, reads, subjects):
         row.cg = matches_to_eqx(row.cg, subject_seg, query_seg)
     return row
 
+def plot_array_content(query_seq, ref1, ref2, transitions_list):
+    qlen, s1len, s2len = len(query_seq), len(ref1), len(ref2)
+    # print all tables individually
+    for o,op in enumerate(["ins", "del", "match", "mmatch", "gst", "gen"]):
+        arr = ops[o, :s1len+s2len, :qlen]
+        df = pd.DataFrame(arr.astype(int), columns=list(query_seq), index=list(ref1+ref2))
+        print(op)
+        print(df)
+    df = pd.DataFrame(scores[:s1len+s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref1+ref2))
+    print("scores")
+    print(df)
+    df = pd.DataFrame(reachable[:s1len+s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref1+ref2))
+    print("reachable")
+    print(df)
+    df = pd.DataFrame(align_ends[0, :s1len, :qlen].astype(int), columns=list(query_seq), index=list(ref1))
+    print("alignment ends s1")
+    print(df)
+    df = pd.DataFrame(align_ends[1, :s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref2))
+    print("alignment ends s2")
+    print(df)
+    # plot the tables in one graph
+    fig, ax = plt.subplots(figsize=(8,8))
+    ax.xaxis.tick_top()
+    ax.imshow(scores[:s1len+s2len+1, :qlen+1], cmap='binary', vmax=int(np.max(scores[:s1len+s2len+1, :qlen+1])*3), interpolation='nearest')
+    ax.set(xticks=list(range(qlen+1)), xticklabels=list("-" + query_seq),
+           yticks=list(range(s1len+s2len+1)), yticklabels=list("-" + ref1+ref2))
+    for (j,i),label in np.ndenumerate(scores[:s1len+s2len+1, :qlen+1]):
+        ax.text(i+0.5,j+0.5,label,ha='right',va='bottom')
+    for o,(op, marker, offset, c) in enumerate([("ins", (3, 0, 3*90), (-0.5, 0), 'black'), 
+                                             ("del", (3, 0, 2*90), (0, -0.5), 'black'), 
+                                             ("match", (3, 0, 2.5*90), (-0.5, -0.5), 'green'),
+                                             ("mmatch", (3, 0, 2.5*90), (-0.5, -0.5), 'red'),
+                                             ("gst", '+', (-0.3, -0.3), 'black'),
+                                             ("gen", 'x', (-0.3, -0.3), 'black')]):
+        arr = ops[o, :s1len+s2len+1, :qlen+1]
+        for (j,i),label in np.ndenumerate(arr):
+            if label == 1:
+                ax.plot(i+offset[0],j+offset[1],marker=marker, markersize=8, color=c, linestyle='None')
+    # show all min-score backtracing paths through table
+    for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        ls2, ls1 = s2len - fa_ref2, fna_ref1
+        lg = (s1len - ls1) + (s2len - ls2)
+
+        k,l = 0,0
+        p = 0
+        cig_s = inflate_cigar(cigar)
+        while (k < query_ts) or (l < fna_ref1):
+            s = cig_s[p]
+            if s in ['M', 'X', '=']:
+                ax.plot([k, k+1], [l, l+1], color="blue")
+                k = k +1
+                l = l +1
+            elif s == 'D':
+                ax.plot([k, k], [l, l+1], color="blue")
+                l = l +1
+            elif s == 'I':
+                ax.plot([k, k+1], [l, l], color="blue")
+                k = k +1
+            p += 1
+        while cig_s[p] == "I":
+            s = cig_s[p]
+            p += 1
+        ax.plot([query_ts, query_te], [fna_ref1, fna_ref1+lg], color="blue", linestyle="--")
+        k += query_te - query_ts
+        l += lg
+        while p < len(cig_s):
+            s = cig_s[p]
+            if s in ['M', 'X', '=']:
+                ax.plot([k, k+1], [l, l+1], color="blue")
+                k = k +1
+                l = l +1
+            elif s == 'D':
+                ax.plot([k, k], [l, l+1], color="blue")
+                l = l +1
+            elif s == 'I':
+                ax.plot([k, k+1], [l, l], color="blue")
+                k = k +1
+            p += 1
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == '__main__':
     parse_args()
     main(args)
-

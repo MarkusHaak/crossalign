@@ -334,21 +334,27 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 			align_ends_s2[i][j] = false;
 		}
 	}
-	for (i=s1len; i<=s1len+s2len; i++) {
+	//for (i=s1len; i<=s1len+s2len; i++) { // this should be sufficient and faster
+	for (i=0; i<=s1len+s2len; i++) {
 		for (j=0; j<=qlen; j++) {
 			reachable[i][j] = false;
 		}
 	}
 	// determine which bases between query and subject s2 can be reached / are aligning when tracing back alignments producing a top score
 	// the resulting array, "reachable", is reused for determining a CIGAR string for all possible alignments
-	// the row at the transition, j=s1len, is processed after determining 
 	reachable[s1len+s2len][qlen] = true;
 	for (i=s1len+s2len; i>s1len; i--) {
 		for (j=qlen; j>=0; j--) {
 			if (reachable[i][j] == true) {
-				if (ins[i][j] == true) reachable[i][j-1] = true;
-				if (del[i][j] == true) reachable[i-1][j] = true;
-				if (match[i][j] == true || mmatch[i][j] == true) reachable[i-1][j-1] = true;
+				if (ins[i][j] == true) {
+					if (j > 0) reachable[i][j-1] = true;
+				}
+				if (del[i][j] == true) {
+					if (i > 0) reachable[i-1][j] = true;
+				}
+				if (match[i][j] == true || mmatch[i][j] == true) {
+					if (i > 0 && j > 0) reachable[i-1][j-1] = true;
+				}
 			}
 		}
 	}
@@ -399,7 +405,7 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 	// determine if there are inserted bases in the query sequence between the alignments against the two subject sequences
 	for (j=qlen; j>0; j--) {
 		if (reachable[s1len][j] == true && ins[s1len][j] == true) {
-			reachable[s1len][j-1] = true;
+			if (j > 0) reachable[s1len][j-1] = true;
 		} 
 	}
 	// determine the alignment endpoints for subject s1. These are stored in the boolean array align_ends_s1, where 
