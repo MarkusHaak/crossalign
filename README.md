@@ -125,7 +125,7 @@ In addition, a binary prefix.alignment.df.pkl file is created, containing the pa
 
 ```
 >>> from crossalign import *
->>> read_sequence_data("reads.fastq", "adapter.fasta", "genome.fasta")
+>>> adapter, genome, reads = read_sequence_data("reads.fastq", "adapter.fasta", "genome.fasta")
 >>> df = pd.read_pickle("prefix.alignment.df.pkl").explode('transitions')
 >>> sel =  (df.order == 1) & (df.strand_ad == '+')     # ref1 ('+')   -> <refX> (+/-)
 >>> sel |= (df.order == -1) & (df.strand_ad == '-')    # <refX> (+/-) -> ref1 ('-')

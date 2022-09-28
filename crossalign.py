@@ -83,7 +83,7 @@ def parse_args(args_=None):
     main_group.add_argument('--reads',
                             required=True,
                             nargs='+',
-                            help='fastq file(s) or path to directorie(s) containing fastq files (recursion depth 1)')
+                            help='fastq file(s) or path to directory(s) containing fastq files (recursion depth 1)')
     main_group.add_argument('--genome',
                             required=True,
                             help='First set of reference sequences (name deprecated, can be any (multiple) fasta file.')
@@ -107,8 +107,8 @@ def parse_args(args_=None):
     main_group.add_argument('--plot',
                             help='plot results of gaussian sequencing error approximation',
                             action='store_true')
-    main_group.add_argument('--circular',
-                            action="store_true")
+    #main_group.add_argument('--circular',
+    #                        action="store_true")
     main_group.add_argument('--strip',
                             help="minimal number of bases stripped from local alignments to cope with coincidently identical sequences",
                             type=int,
@@ -124,7 +124,7 @@ def parse_args(args_=None):
                             type=int,
                             default=200)
     main_group.add_argument('--allow_all_trimmed',
-                            help='''do not reject transition candidates that contain no <--strip> number of consecutive matching bases
+                            help='''do not reject transition candidates that contain no <--wordsize> number of consecutive matching bases
                             on both sides of a potential transition''',
                             action='store_true')
     main_group.add_argument('--sequence_type',
@@ -195,6 +195,7 @@ def parse_args(args_=None):
 
 def main(args):
     global logger, soi
+    global adapter, genome, reads
     if args.quiet:
         logging.basicConfig(stream=sys.stdout, level=logging.WARNING, 
                             format='%(asctime)s %(levelname)s: %(message)s', datefmt='%H:%M:%S')
@@ -203,8 +204,6 @@ def main(args):
                             format='%(asctime)s %(levelname)s: %(message)s', datefmt='%H:%M:%S')
     logger = logging.getLogger('main')
 
-    ct.CDLL(clib).init(args.sequence_type == 'nucl')
-    init_ctypes_arrays(args)
     pandarallel.initialize(nb_workers=args.processes, progress_bar=(args.progress and not args.quiet), verbose=(not args.quiet))
 
     # read sequence data
@@ -221,7 +220,7 @@ def main(args):
         soi = pd.read_csv(args.sites_of_interest, header=None, sep='\t', names=['subj', 'strand', 'site']).set_index(['subj', 'strand'], drop=True)
 
     adapter_fn, genome_fn = args.adapter, args.genome
-    read_sequence_data(fq_fns, adapter_fn, genome_fn)
+    adapter, genome, reads = read_sequence_data(fq_fns, adapter_fn, genome_fn)
 
     if not args.adapter_alignment:
         logger.info(" - performing reads to adapter reference mapping ...")
@@ -299,6 +298,11 @@ def main(args):
         sequence_length_stats(gn_algn_df)
         logger.info("{:>11.4f} mean of per-base difference in sequence length".format(args.mean))
         logger.info("{:>11.4f} std dev of per-base difference in sequence length".format(args.std))
+
+    logger.info(" - initialize ctypes arrays")
+    ct.CDLL(clib).init(args.sequence_type == 'nucl')
+    init_ctypes_arrays(args)
+    pandarallel.initialize(nb_workers=args.processes, progress_bar=(args.progress and not args.quiet), verbose=(not args.quiet))
 
     logger.info(" - joining alignment data and filtering for adjacent adapter-genome alignments")
     # determine order of alignments of each read with respect to each adapter-subject pair
@@ -433,7 +437,7 @@ def main(args):
     df.to_csv(fn, sep=",", index=False)
 
 def read_sequence_data(fq_fns, adapter_fn, genome_fn):
-    global adapter, genome, reads, logger
+    global logger
     if not logger:
         logger = logging.getLogger('main')
     if type(fq_fns) == str:
@@ -460,6 +464,7 @@ def read_sequence_data(fq_fns, adapter_fn, genome_fn):
             reads[str(record.id)] = str(record.seq)
     reads = pd.DataFrame.from_dict(reads, orient='index', columns=['seq'], dtype='string')
     logger.info("{:>11} reads in dataset\n".format(len(reads)))
+    return adapter, genome, reads
 
 def init_ctypes_arrays(args):
     global scores, ops, transitions, align_ends, reachable, cigarbuffer, scores_pp
