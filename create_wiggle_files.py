@@ -16,6 +16,9 @@ def parse_args(args_=None):
                             their output is combined. In this case, a new prefix must be given.''')
     main_group.add_argument('--prefix',
                             help='Prefix for the created output files. (Default: same as prefix of single input file)')
+    main_group.add_argument('--min_norm_score',
+                            default=np.NINF,
+                            help='''Reject transitions with a length normalized alignment score lower than this threshold.''')
 
     help_group = parser.add_argument_group('Help')
     help_group.add_argument('-h', '--help', 
@@ -46,6 +49,8 @@ def main():
         df = pd.read_pickle(results)
         df['one_div_sites'] = 1 / df.transitions.str.len()
         d = df.explode('transitions')
+        # filter lowquality alignments
+        d = d.loc[d.norm_score >= args.min_norm_score]
         # add site columns
         d['site_gn'] = np.nan
         d['site_ad'] = np.nan
