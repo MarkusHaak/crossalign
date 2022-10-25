@@ -101,8 +101,6 @@ def gb_to_feature_list(fp, exclude_keys=['source', 'gene', 'rRNA'], prom_dist=50
                     start = int(location.group(3))
                     end = int(location.group(5))
                     assert start > 0 and end <= repl_len
-                    start = int(location.group(2))
-                    end = int(location.group(3))
                     strand = "-" if feature.location.startswith('complement') else '+'
                     data.append((replicon, locus_tag, gene, start, end, strand, repl_len))
     df_ = pd.DataFrame(data, columns=['replicon', 'locus_tag', 'gene', 'start', 'end', 'strand', 'repl_len']).set_index(['replicon', 'locus_tag'])
