@@ -123,8 +123,8 @@ def count_feature_hits(features, d, min_norm_score=np.NINF, filter_ambiguous=Fal
     hits = {}
     sum_hits = {}
     for subj in d.subj_gn.unique():
-        hits[subj] = {'+' : np.zeros(features.loc['CP005959.1'].iloc[0].repl_len),
-                      '-' : np.zeros(features.loc['CP005959.1'].iloc[0].repl_len)}
+        hits[subj] = {'+' : np.zeros(features.loc[subj].iloc[0].repl_len),
+                      '-' : np.zeros(features.loc[subj].iloc[0].repl_len)}
         sum_hits[subj] = 0
         sel = (d.subj_gn == subj) & (d.norm_score >= min_norm_score)
         if filter_ambiguous:
@@ -162,7 +162,7 @@ def main():
     d.loc[(d.order == 1), 'site_ad'] = d.loc[(d.order == 1)].transitions.str[0]
     d.loc[(d.order == -1), 'site_ad'] = d.loc[(d.order == -1)].transitions.str[1]
 
-    features = gb_to_feature_list("CP005959.gb", prom_dist=args.promotor_bases, essential=args.essential_fraction)
+    features = gb_to_feature_list(args.genbank, prom_dist=args.promotor_bases, essential=args.essential_fraction)
     hits = count_feature_hits(features, d, min_norm_score=args.min_norm_score, filter_ambiguous=args.filter_ambiguous)
 
     fp = f"{args.prefix}.feat_hits.csv"
