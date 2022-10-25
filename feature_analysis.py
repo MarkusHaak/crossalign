@@ -84,10 +84,23 @@ def gb_to_feature_list(fp, exclude_keys=['source', 'gene', 'rRNA'], prom_dist=50
                 if feature.key == "source":
                     repl_len = int(re.match("(\d+)\.\.(\d+)", feature.location).group(2))
                 if feature.key not in exclude_keys:
-                    locus_tag = [qf.value for qf in feature.qualifiers if qf.key == '/locus_tag='][0].strip('"')
+                    locus_tag = [qf.value for qf in feature.qualifiers if qf.key == '/locus_tag=']
+                    if not locus_tag:
+                        locus_tag = "_".join([feature.key, feature.location])
+                        if locus_tag in [locus_tag for replicon, locus_tag, gene, start, end, strand, repl_len in data]:
+                            i = 2
+                            while f"{locus_tag}_{i}" in [locus_tag for replicon, locus_tag, gene, start, end, strand, repl_len in data]:
+                                i += 1
+                            locus_tag = f"{locus_tag}_{i}"
+                        print("WARNING: no locus_tag for feature", feature.key, feature.location, " --> set to", locus_tag)
+                    else:
+                        locus_tag = locus_tag[0].strip('"')
                     gene = [qf.value for qf in feature.qualifiers if qf.key == '/gene=']
                     gene = gene[0].strip('"') if gene else ""
-                    location = re.match("(complement\()?(\d+)\.\.(\d+)\)?", feature.location)
+                    location = re.match("(complement\()?(join\()?\<?(\d+)\.\.(\d+,\d+\.\.)*\>?(\d+)\)*", feature.location)
+                    start = int(location.group(3))
+                    end = int(location.group(5))
+                    assert start > 0 and end <= repl_len
                     start = int(location.group(2))
                     end = int(location.group(3))
                     strand = "-" if feature.location.startswith('complement') else '+'
