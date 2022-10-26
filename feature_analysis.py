@@ -84,12 +84,22 @@ def gb_to_feature_list(fp, exclude_keys=['source', 'gene', 'rRNA'], prom_dist=50
                 if feature.key == "source":
                     repl_len = int(re.match("(\d+)\.\.(\d+)", feature.location).group(2))
                 if feature.key not in exclude_keys:
-                    locus_tag = [qf.value for qf in feature.qualifiers if qf.key == '/locus_tag='][0].strip('"')
+                    locus_tag = [qf.value for qf in feature.qualifiers if qf.key == '/locus_tag=']
+                    if not locus_tag:
+                        locus_tag = "_".join([feature.key, feature.location])
+                        if locus_tag in [locus_tag for replicon, locus_tag, gene, start, end, strand, repl_len in data]:
+                            i = 2
+                            while f"{locus_tag}_{i}" in [locus_tag for replicon, locus_tag, gene, start, end, strand, repl_len in data]:
+                                i += 1
+                            locus_tag = f"{locus_tag}_{i}"
+                        print("WARNING: no locus_tag for feature", feature.key, feature.location, " --> set to", locus_tag)
+                    else:
+                        locus_tag = locus_tag[0].strip('"')
                     gene = [qf.value for qf in feature.qualifiers if qf.key == '/gene=']
                     gene = gene[0].strip('"') if gene else ""
-                    location = re.match("(complement\()?(\d+)\.\.(\d+)\)?", feature.location)
-                    start = int(location.group(2))
-                    end = int(location.group(3))
+                    location = re.match("(complement\()?(join\()?\<?(\d+)\.\.(\d+,\d+\.\.)*\>?(\d+)\)*", feature.location)
+                    start = int(location.group(3))
+                    end = int(location.group(5))
                     strand = "-" if feature.location.startswith('complement') else '+'
                     data.append((replicon, locus_tag, gene, start, end, strand, repl_len))
     df_ = pd.DataFrame(data, columns=['replicon', 'locus_tag', 'gene', 'start', 'end', 'strand', 'repl_len']).set_index(['replicon', 'locus_tag'])
@@ -123,8 +133,8 @@ def count_feature_hits(features, d, min_norm_score=np.NINF, filter_ambiguous=Fal
     hits = {}
     sum_hits = {}
     for subj in d.subj_gn.unique():
-        hits[subj] = {'+' : np.zeros(features.loc['CP005959.1'].iloc[0].repl_len),
-                      '-' : np.zeros(features.loc['CP005959.1'].iloc[0].repl_len)}
+        hits[subj] = {'+' : np.zeros(features.loc[subj].iloc[0].repl_len + 1),
+                      '-' : np.zeros(features.loc[subj].iloc[0].repl_len + 1)}
         sum_hits[subj] = 0
         sel = (d.subj_gn == subj) & (d.norm_score >= min_norm_score)
         if filter_ambiguous:
@@ -162,7 +172,7 @@ def main():
     d.loc[(d.order == 1), 'site_ad'] = d.loc[(d.order == 1)].transitions.str[0]
     d.loc[(d.order == -1), 'site_ad'] = d.loc[(d.order == -1)].transitions.str[1]
 
-    features = gb_to_feature_list("CP005959.gb", prom_dist=args.promotor_bases, essential=args.essential_fraction)
+    features = gb_to_feature_list(args.genbank, prom_dist=args.promotor_bases, essential=args.essential_fraction)
     hits = count_feature_hits(features, d, min_norm_score=args.min_norm_score, filter_ambiguous=args.filter_ambiguous)
 
     fp = f"{args.prefix}.feat_hits.csv"

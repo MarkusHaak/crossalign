@@ -135,7 +135,7 @@ def main():
         print(f'{d_sel.set_index(["strand_gn","site_gn"]).index.unique().size:>10} unique sites on genome sequence "{subj_gn}" (all transitions):')
         print(f'{d_sel.loc[d_sel.strand_gn == "+"].site_gn.unique().size:>10}     on (+) strand')
         print(f'{d_sel.loc[d_sel.strand_gn == "-"].site_gn.unique().size:>10}     on (-) strand')
-    print(f'{d.loc[d.amb == False].set_index(["strand_ad","site_ad","subj_gn"]).index.unique().size:>10} unique sites on any genome sequence (unambiguous transitions)')
+    print(f'{d.loc[d.amb == False].set_index(["strand_gn","site_gn","subj_gn"]).index.unique().size:>10} unique sites on any genome sequence (unambiguous transitions)')
     for subj_gn in genome.index:
         d_sel = d.loc[(d.subj_gn == subj_gn)]
         print(f'{d_sel.loc[(d_sel.amb == False)].set_index(["strand_gn","site_gn"]).index.unique().size:>10} unique sites on genome sequence "{subj_gn}" (unambiguous transitions)')

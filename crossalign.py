@@ -255,11 +255,12 @@ def main(args):
         logger.error("No alignments against adapter sequences produced.")
         exit(1)
 
-    logger.info('- change adapter cigar operator M to either = or X:')
+    logger.info(' - change adapter cigar operator M to either = or X:')
     ad_algn_df = ad_algn_df.parallel_apply(lambda row: row_cg_to_eqx(row, reads, adapter), axis=1)
 
     if not args.genome_alignment:
         logger.info(" - performing reads to genome reference mapping ...")
+        fq_fn = " ".join(fq_fns)
         ref_fn = args.genome
         if args.genome_alignment_tool == 'minimap2':
             args.genome_alignment = "{}.genome_alignment.paf".format(args.prefix)
@@ -396,7 +397,10 @@ def main(args):
     #init_ctypes_arrays(args)
 
     # start the actual alignments
-    df = df.parallel_apply(lambda row: c_align_row(row), axis=1)
+    if args.processes > 1:
+        df = df.parallel_apply(lambda row: c_align_row(row), axis=1)
+    else:
+        df = df.apply(lambda row: c_align_row(row), axis=1)
 
     sel = sel & df.score.notnull()
     c = sum(sel)
@@ -405,7 +409,7 @@ def main(args):
     df.loc[sel & (df.qlen > 0), 'norm_score'] = df[sel].score / (df[sel].qlen * args.match)
     df.loc[sel & (df.qlen == 0), 'norm_score'] = 1. # if the two alignments are fitting together perfetly
 
-    for upper, lower in [(1., .9), (.9, .8), (.8, .7), (.7, .6), (.6, .5), (.5, 0.)]:
+    for upper, lower in [(1., .9), (.9, .8), (.8, .7), (.7, .6), (.6, .5), (.5, .4), (.4, .3), (.3, .2), (.2, np.NINF)]:
         c = sum(sel & (upper >= df.norm_score) & (df.norm_score > lower))
         logger.info('{:>11} {:>5.1f} % with {} >= normed score > {}'.format(c, c/sum(sel)*100., upper, lower))
 
@@ -594,7 +598,7 @@ def parse_bam(fn):
         data.append( (qid, qlen, qst, qen, strand, subj, slen, sst, sen, mlen, blen, cg) )
     return pd.DataFrame(data, columns=names)
 
-def print_alignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te, width=50):
+def print_crossalignment(query, ref1, ref2, cigar, r1_fna, r2_fa, query_ts, query_te, width=50):
     ref1_ss = []
     ref1_op = []
     quer_ss = []
@@ -709,7 +713,7 @@ def verbose(df):
         cigar = inflate_cigar(cigar)
         print('"{}" ({}) @{} -> "{}" ({}) @{} , norm_score {:.1f}'.format(row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te), row.norm_score))
         print('query: {}'.format(row.rid))
-        print_alignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
+        print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
 
 def traverse_cg(trimmed_query, trimmed_subject, bases, op):
     if op == "=" and bases >= args.wordsize and trimmed_query >= args.strip:
@@ -910,6 +914,8 @@ def retrieve_transitions_list(query_seq, ref1, ref2, strand_ref1, strand_ref2, s
     return transitions_list
 
 def c_align_row(row):
+    row['score'] = np.nan
+    row['transitions'] = []
     if pd.isnull(row.max_ref_len):
         return row
 
@@ -978,7 +984,7 @@ def set_references(df, sel):
 
     sel_ = sel & (df.strand_ref1 == '+')
     if sel_.any():
-        df.loc[sel_, 'sst_ref1']    = df[sel_].sen_ref1 - df[sel_].trim_ref1
+        df.loc[sel_, 'sst_ref1']    = (df[sel_].sen_ref1 - df[sel_].trim_ref1).clip(lower=0)
         df.loc[sel_, 'sen_ref1']    = df[sel_].sst_ref1 + df[sel_].max_ref_len
     sel_ = sel & (df.strand_ref1 == '-')
     if sel_.any():
@@ -990,8 +996,27 @@ def set_references(df, sel):
         df.loc[sel_, 'sst_ref2']    = (df[sel_].sen_ref2 - df[sel_].max_ref_len).clip(lower=0)
     sel_ = sel & (df.strand_ref2 == '-')
     if sel_.any():
-        df.loc[sel_, 'sst_ref2']    = df[sel_].sen_ref2 - df[sel_].trim_ref2
+        df.loc[sel_, 'sst_ref2']    = (df[sel_].sen_ref2 - df[sel_].trim_ref2).clip(lower=0)
         df.loc[sel_, 'sen_ref2']    = df[sel_].sst_ref2 + df[sel_].max_ref_len
+
+    # clip upper boundry: length of subject sequence
+    # todo: consider circularity of genome
+    sel_ = sel & (df.order == 1.)
+    if sel_.any():
+        for subj_ad in df.loc[sel_].subj_ad.unique():
+            sel__ = sel_ & (df.subj_ref1 == subj_ad)
+            df.loc[sel__, 'sen_ref1'] = df.loc[sel__, 'sen_ref1'].clip(upper=len(adapter.loc[subj_ad].seq))
+        for subj_gn in df.loc[sel_].subj_gn.unique():
+            sel__ = sel_ & (df.subj_ref2 == subj_gn)
+            df.loc[sel__, 'sen_ref2'] = df.loc[sel__, 'sen_ref2'].clip(upper=len(genome.loc[subj_gn].seq))
+    sel_ = sel & (df.order == -1.)
+    if sel_.any():
+        for subj_ad in df.loc[sel_].subj_ad.unique():
+            sel__ = sel_ & (df.subj_ref2 == subj_ad)
+            df.loc[sel__, 'sen_ref2'] = df.loc[sel__, 'sen_ref2'].clip(upper=len(adapter.loc[subj_ad].seq))
+        for subj_gn in df.loc[sel_].subj_gn.unique():
+            sel__ = sel_ & (df.subj_ref1 == subj_gn)
+            df.loc[sel__, 'sen_ref1'] = df.loc[sel__, 'sen_ref1'].clip(upper=len(genome.loc[subj_gn].seq))
 
     return df
 
