@@ -44,9 +44,10 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         score = c_align(args, query_seq, ref1, ref2, free_gap)
         transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
 
-        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
             print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
-            print_alignment(query_seq, ref1, ref2, inflate_cigar(cigar), fna_ref1, fa_ref2, query_ts, query_te)
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 4, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
         self.assertEqual(transitions_list[0][-1], "4=", 'wrong cigar string')
@@ -61,9 +62,10 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         score = c_align(args, query_seq, ref1, ref2, free_gap)
         transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
 
-        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
             print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
-            print_alignment(query_seq, ref1, ref2, inflate_cigar(cigar), fna_ref1, fa_ref2, query_ts, query_te)
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 4, 'wrong score')
         self.assertEqual(len(transitions_list), 2, 'wrong number of highest-scoring transitions')
         self.assertEqual(transitions_list[0][-1], "4=", 'wrong cigar string')
@@ -79,9 +81,10 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         score = c_align(args, query_seq, ref1, ref2, free_gap)
         transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
 
-        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
             print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
-            print_alignment(query_seq, ref1, ref2, inflate_cigar(cigar), fna_ref1, fa_ref2, query_ts, query_te)
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 1, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
         self.assertEqual(transitions_list[0][-1], "2=2D2=", 'wrong cigar string')
@@ -96,9 +99,10 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         score = c_align(args, query_seq, ref1, ref2, free_gap)
         transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
 
-        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
             print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
-            print_alignment(query_seq, ref1, ref2, inflate_cigar(cigar), fna_ref1, fa_ref2, query_ts, query_te)
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 2, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
         self.assertEqual(transitions_list[0][-1], "2=1D2=", 'wrong cigar string')
@@ -113,9 +117,10 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         score = c_align(args, query_seq, ref1, ref2, free_gap)
         transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
 
-        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
             print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
-            print_alignment(query_seq, ref1, ref2, inflate_cigar(cigar), fna_ref1, fa_ref2, query_ts, query_te)
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 1, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
         self.assertEqual(transitions_list[0][-1], "2=2D2=", 'wrong cigar string')
@@ -130,9 +135,10 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         score = c_align(args, query_seq, ref1, ref2, free_gap)
         transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
 
-        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
             print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
-            print_alignment(query_seq, ref1, ref2, inflate_cigar(cigar), fna_ref1, fa_ref2, query_ts, query_te)
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 0, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
         self.assertEqual(transitions_list[0][-1], "1D4=1D", 'wrong cigar string')
@@ -147,9 +153,10 @@ class SimpleAlignmentTestCase(unittest.TestCase):
         score = c_align(args, query_seq, ref1, ref2, free_gap)
         transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
 
-        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
             print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
-            print_alignment(query_seq, ref1, ref2, inflate_cigar(cigar), fna_ref1, fa_ref2, query_ts, query_te)
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 2, 'wrong score')
         self.assertEqual(len(transitions_list), 4, 'wrong number of highest-scoring transitions')
 

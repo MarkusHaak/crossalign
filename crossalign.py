@@ -483,7 +483,7 @@ def init_ctypes_arrays(args):
     transitions = np.empty(shape=(2, max_subj_len+1, max_subj_len+1), dtype=np.int16)
     align_ends = np.empty(shape=(2, max_subj_len+1, args.max_dist+1), dtype=np.bool_)
     reachable = np.empty(shape=(2*max_subj_len+1, args.max_dist+1), dtype=np.bool_)
-    cigarbuffer = ct.create_string_buffer(args.max_dist + 2 * max_subj_len + 1)
+    cigarbuffer = ct.create_string_buffer(args.max_dist + 2 * max_subj_len + 3) # +3 for gaps
     for arr in [scores, ops, transitions, align_ends, reachable]:
         if arr.flags['C_CONTIGUOUS'] == False:
             arr = np.ascontiguousarray(arr, dtype=arr.dtype)
@@ -709,8 +709,8 @@ def verbose(df):
     for i, row in df.iterrows():
         ref1, ref2 = get_reference_sequences(row)
         query_seq = reads.loc[row.rid].seq[int(row.qst) : int(row.qen)]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
-        cigar = inflate_cigar(cigar)
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
+        cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
         print('"{}" ({}) @{} -> "{}" ({}) @{} , norm_score {:.1f}'.format(row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te), row.norm_score))
         print('query: {}'.format(row.rid))
         print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
@@ -898,8 +898,10 @@ def retrieve_transitions_list(query_seq, ref1, ref2, strand_ref1, strand_ref2, s
                          reachable_pp, fna_ref1, fa_ref2, query_ts, query_te,
                          cigarbuffer) == 0, \
                "failed to retrieve the CIGAR string for alignment"
-        cigar = cigarbuffer.value.decode('utf-8')
-        cigar = "".join(["{}{}".format(count_iter_items(g), k) for k,g in groupby(cigar)])
+        #cigar = cigarbuffer.value.decode('utf-8')
+        #cigar = "".join(["{}{}".format(count_iter_items(g), k) for k,g in groupby(cigar)])
+        cigars = cigarbuffer.value.decode('utf-8').split(' ')
+        cigars = ["".join(["{}{}".format(count_iter_items(g), k) for k,g in groupby(cg)]) for cg in cigars]
 
         if strand_ref1 == '+':
             ts = sst_ref1 + fna_ref1
@@ -910,7 +912,7 @@ def retrieve_transitions_list(query_seq, ref1, ref2, strand_ref1, strand_ref2, s
         else:
             te = sen_ref2 - fa_ref2
 
-        transitions_list.append( (ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) )
+        transitions_list.append( (ts, te, fna_ref1, fa_ref2, query_ts, query_te, *cigars) )
     return transitions_list
 
 def c_align_row(row):
@@ -1128,23 +1130,23 @@ def row_cg_to_eqx(row, reads, subjects):
 def plot_array_content(query_seq, ref1, ref2, transitions_list):
     qlen, s1len, s2len = len(query_seq), len(ref1), len(ref2)
     # print all tables individually
-    for o,op in enumerate(["ins", "del", "match", "mmatch", "gst", "gen"]):
-        arr = ops[o, :s1len+s2len, :qlen]
-        df = pd.DataFrame(arr.astype(int), columns=list(query_seq), index=list(ref1+ref2))
-        print(op)
-        print(df)
-    df = pd.DataFrame(scores[:s1len+s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref1+ref2))
-    print("scores")
-    print(df)
-    df = pd.DataFrame(reachable[:s1len+s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref1+ref2))
-    print("reachable")
-    print(df)
-    df = pd.DataFrame(align_ends[0, :s1len, :qlen].astype(int), columns=list(query_seq), index=list(ref1))
-    print("alignment ends s1")
-    print(df)
-    df = pd.DataFrame(align_ends[1, :s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref2))
-    print("alignment ends s2")
-    print(df)
+    #for o,op in enumerate(["ins", "del", "match", "mmatch", "gst", "gen"]):
+    #    arr = ops[o, :s1len+s2len, :qlen]
+    #    df = pd.DataFrame(arr.astype(int), columns=list(query_seq), index=list(ref1+ref2))
+    #    print(op)
+    #    print(df)
+    #df = pd.DataFrame(scores[:s1len+s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref1+ref2))
+    #print("scores")
+    #print(df)
+    #df = pd.DataFrame(reachable[:s1len+s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref1+ref2))
+    #print("reachable")
+    #print(df)
+    #df = pd.DataFrame(align_ends[0, :s1len, :qlen].astype(int), columns=list(query_seq), index=list(ref1))
+    #print("alignment ends s1")
+    #print(df)
+    #df = pd.DataFrame(align_ends[1, :s2len, :qlen].astype(int), columns=list(query_seq), index=list(ref2))
+    #print("alignment ends s2")
+    #print(df)
     # plot the tables in one graph
     fig, ax = plt.subplots(figsize=(8,8))
     ax.xaxis.tick_top()
@@ -1164,13 +1166,13 @@ def plot_array_content(query_seq, ref1, ref2, transitions_list):
             if label == 1:
                 ax.plot(i+offset[0],j+offset[1],marker=marker, markersize=8, color=c, linestyle='None')
     # show all min-score backtracing paths through table
-    for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar) in enumerate(transitions_list):
+    for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
         ls2, ls1 = s2len - fa_ref2, fna_ref1
         lg = (s1len - ls1) + (s2len - ls2)
 
         k,l = 0,0
         p = 0
-        cig_s = inflate_cigar(cigar)
+        cig_s = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
         while (k < query_ts) or (l < fna_ref1):
             s = cig_s[p]
             if s in ['M', 'X', '=']:
@@ -1203,6 +1205,7 @@ def plot_array_content(query_seq, ref1, ref2, transitions_list):
                 ax.plot([k, k+1], [l, l], color="blue")
                 k = k +1
             p += 1
+
     plt.tight_layout()
     plt.show()
 

@@ -216,57 +216,103 @@ matches(unsigned char a, unsigned char b)
 int get_cigar(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
 		      const int16_t qlen, const int16_t s1len, const int16_t s2len,
 	          bool** reachable, const int16_t s1fna, const int16_t s2fa, const int16_t qts, const int16_t qte, char* cigar) {
-	int i, j, blen;
-	blen = 0; // total length of cigar string
+	int i, j, len_cg;
+	len_cg = 0; // total length of cigar string
+
 	// cigar of alignment against s1
 	for (i=s1fna, j=qts; i!=0 || j!=0; ) {
-		// prioritizes matches near transition point
+		// extend gaps in the alignment if possible
+		if (len_cg > 0) {
+			if (del[i][j] == true && cigar[len_cg-1] == 'D') {
+				cigar[len_cg++] = 'D';
+				i--;
+				continue;
+			}
+			if (ins[i][j] == true && cigar[len_cg-1] == 'I') {
+				cigar[len_cg++] = 'I';
+				j--;
+				continue;
+			}
+		}
+		// otherwise, prioritizes (mis-)matches
 		if (match[i][j] == true) {
-			cigar[blen++] = '=';
+			cigar[len_cg++] = '=';
 			i--;
 			j--;
 			continue;
 		}
 		if (mmatch[i][j] == true) {
-			cigar[blen++] = 'X';
+			cigar[len_cg++] = 'X';
 			i--;
 			j--;
 			continue;
 		}
 		if (del[i][j] == true) {
-			cigar[blen++] = 'D';
+			cigar[len_cg++] = 'D';
 			i--;
 			continue;
 		}
-		if (ins[i][j] == true) {
-			cigar[blen++] = 'I';
+		if (ins[i][j] == true && !(i == s1fna && j==qts)) { // no insertions at transition site
+			cigar[len_cg++] = 'I';
 			j--;
 			continue;
 		}
 		// it should be impossible that non of the above cases is true
 		return -1;
 	}
-	cigar[blen] = '\0';
+	cigar[len_cg] = '\0';
 	strrev(cigar);
+	//cg_split_1 = len_cg;
+	cigar[len_cg++] = ' ';
 
 	// add Insertions between aligning parts
 	for (i=qte-qts; i>0; i--) {
-		cigar[blen++] = 'I';
+		cigar[len_cg++] = 'I';
 	}
+	//cg_split_2 = len_cg;
+	cigar[len_cg++] = ' ';
 
 	// cigar of alignment against s2
 	for (i=s1len+s2fa, j=qte; i!=s1len+s2len || j!=qlen; ) {
-		// prioritizes matches near transition point
+		// extend gaps in the alignment if possible
+		if (i == s1len+s2fa && j == qte) { // insertion not allowed at transition site
+			if (i < s1len+s2len && cigar[len_cg-3] == 'D') {
+				// -3 due to the gap characters ' ' 
+				// In case of inter-alignment insertions, this will never evaluate true
+				if (reachable[i+1][j] == true && del[i+1][j] == true) {
+					cigar[len_cg++] = 'D';
+					i++;
+					continue;
+				}
+			}
+		}
+		if (len_cg > 2) { // 2 due to the gap characters ' ' 
+			if (i < s1len+s2len && cigar[len_cg-1] == 'D') {
+				if (reachable[i+1][j] == true && del[i+1][j] == true) {
+					cigar[len_cg++] = 'D';
+					i++;
+					continue;
+				}
+			}
+			if (j < qlen && cigar[len_cg-1] == 'I' && !(i == s1len+s2fa && j==qte)) { // no insertions at transition site
+				if (reachable[i][j+1] == true && ins[i][j+1] == true) {
+					cigar[len_cg++] = 'I';
+					j++;
+					continue;
+				}
+			}
+		}
+		// otherwise, prioritize (mis-)matches
 		if (i < s1len+s2len && j < qlen) {
 			if (reachable[i+1][j+1] == true) {
 				if (match[i+1][j+1] == true) {
-					cigar[blen++] = '=';
+					cigar[len_cg++] = '=';
 					i++;
 					j++;
 					continue;
 				}
 				if (mmatch[i+1][j+1] == true) {
-					cigar[blen++] = 'X';
+					cigar[len_cg++] = 'X';
 					i++;
 					j++;
 					continue;
@@ -275,14 +321,14 @@ int get_cigar(const bool** ins, const bool** del, const bool** match, const bool
 		}
 		if (i < s1len+s2len) {
 			if (reachable[i+1][j] == true && del[i+1][j] == true) {
-				cigar[blen++] = 'D';
+				cigar[len_cg++] = 'D';
 				i++;
 				continue;
 			}
 		}
-		if (j < qlen) {
+		if (j < qlen && !(i == s1len+s2fa && j==qte)) { // no insertions at transition site
 			if (reachable[i][j+1] == true && ins[i][j+1] == true) {
-				cigar[blen++] = 'I';
+				cigar[len_cg++] = 'I';
 				j++;
 				continue;
 			}
@@ -290,7 +336,88 @@ int get_cigar(const bool** ins, const bool** del, const bool** match, const bool
 		// it should be impossible that non of the above cases is true
 		return -1;
 	}
-	cigar[blen] = '\0';
+	cigar[len_cg] = '\0';
+	return 0;
+}
+
+int get_cigar_old(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
+		      const int16_t qlen, const int16_t s1len, const int16_t s2len,
+	          bool** reachable, const int16_t s1fna, const int16_t s2fa, const int16_t qts, const int16_t qte, char* cigar) {
+	int i, j, len_cg;
+	len_cg = 0; // total length of cigar string
+	// cigar of alignment against s1
+	for (i=s1fna, j=qts; i!=0 || j!=0; ) {
+		// prioritizes matches near transition point
+		if (match[i][j] == true) {
+			cigar[len_cg++] = '=';
+			i--;
+			j--;
+			continue;
+		}
+		if (mmatch[i][j] == true) {
+			cigar[len_cg++] = 'X';
+			i--;
+			j--;
+			continue;
+		}
+		if (del[i][j] == true) {
+			cigar[len_cg++] = 'D';
+			i--;
+			continue;
+		}
+		if (ins[i][j] == true) {
+			cigar[len_cg++] = 'I';
+			j--;
+			continue;
+		}
+		// it should be impossible that non of the above cases is true
+		return -1;
+	}
+	cigar[len_cg] = '\0';
+	strrev(cigar);
+
+	// add Insertions between aligning parts
+	for (i=qte-qts; i>0; i--) {
+		cigar[len_cg++] = 'I';
+	}
+
+	// cigar of alignment against s2
+	for (i=s1len+s2fa, j=qte; i!=s1len+s2len || j!=qlen; ) {
+		// prioritizes matches near transition point
+		if (i < s1len+s2len && j < qlen) {
+			if (reachable[i+1][j+1] == true) {
+				if (match[i+1][j+1] == true) {
+					cigar[len_cg++] = '=';
+					i++;
+					j++;
+					continue;
+				}
+				if (mmatch[i+1][j+1] == true) {
+					cigar[len_cg++] = 'X';
+					i++;
+					j++;
+					continue;
+				}
+			}
+		}
+		if (i < s1len+s2len) {
+			if (reachable[i+1][j] == true && del[i+1][j] == true) {
+				cigar[len_cg++] = 'D';
+				i++;
+				continue;
+			}
+		}
+		if (j < qlen) {
+			if (reachable[i][j+1] == true && ins[i][j+1] == true) {
+				cigar[len_cg++] = 'I';
+				j++;
+				continue;
+			}
+		}
+		// it should be impossible that non of the above cases is true
+		return -1;
+	}
+	cigar[len_cg] = '\0';
 	return 0;
 }
 
@@ -318,6 +445,33 @@ int get_transitions(const bool** ins, const int16_t qlen, const int16_t s1len, c
 		}
 	}
 	return 0;
+}
+
+bool back_m_match_possible(int i, int j, 
+						   const bool** ins, const bool** del, const bool** match, const bool** mmatch,
+						   const int16_t qlen, const int16_t s1len, const int16_t s2len,
+						   bool** reachable) {
+	if ((match[i][j] == true || mmatch[i][j] == true) && i > 0 && j > 0) {
+		if (i == s1len+s2len && j == qlen) {
+			return true;
+		}
+		if (i < s1len+s2len && j < qlen) {
+			if (reachable[i+1][j+1] == true && (match[i+1][j+1] == true || mmatch[i+1][j+1] == true)) {
+				return true;
+			}
+		}
+		if (i < s1len+s2len) {
+			if (reachable[i+1][j] == true && del[i+1][j] == true && del[i][j] == false) {
+				return true;
+			}
+		}
+		if (j < qlen) {
+			if (reachable[i][j+1] == true && ins[i][j+1] == true && ins[i][j] == false) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 int backtrace(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
@@ -352,8 +506,11 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 				if (del[i][j] == true) {
 					if (i > 0) reachable[i-1][j] = true;
 				}
-				if (match[i][j] == true || mmatch[i][j] == true) {
-					if (i > 0 && j > 0) reachable[i-1][j-1] = true;
+				//if (match[i][j] == true || mmatch[i][j] == true) {
+				//	if (i > 0 && j > 0) reachable[i-1][j-1] = true;
+				//}
+				if (back_m_match_possible(i, j, ins, del, match, mmatch, qlen, s1len, s2len, reachable)) {
+					reachable[i-1][j-1] = true;
 				}
 			}
 		}
@@ -387,7 +544,8 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 							}
 						}
 					}
-					else if (((match[i+1][j+1] == true || mmatch[i+1][j+1] == true) && reachable[i+1][j+1] == true) || 
+					//else if (((match[i+1][j+1] == true || mmatch[i+1][j+1] == true) && reachable[i+1][j+1] == true) || 
+					else if (back_m_match_possible(i+1, j+1, ins, del, match, mmatch, qlen, s1len, s2len, reachable) || 
 						     (del[i+1][j] == true && reachable[i+1][j] == true)) {
 						if (i == s1len) {
 							align_ends_s2[0][j] = true;
@@ -405,7 +563,7 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 	// determine if there are inserted bases in the query sequence between the alignments against the two subject sequences
 	for (j=qlen; j>0; j--) {
 		if (reachable[s1len][j] == true && ins[s1len][j] == true) {
-			if (j > 0) reachable[s1len][j-1] = true;
+			reachable[s1len][j-1] = true;
 		} 
 	}
 	// determine the alignment endpoints for subject s1. These are stored in the boolean array align_ends_s1, where 
@@ -422,11 +580,13 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 		for (j=qlen; j>=0; j--) {
 			if (reachable[s1len][j] == true) {
 				for (i=s1len; i>=1; i--) {
-					// if it is possible to get away from (i,j) without a free end gap
+					// if it is possible to get away from (i,j) without an insertion
 					if (match[i][j] == true || mmatch[i][j] == true || del[i][j] == true) {
+					//if (back_m_match_possible(i, j, ins, del, match, mmatch, qlen, s1len, s2len, reachable) || del[i][j] == true) {
 						if (i == s1len) {
 							align_ends_s1[i][j] = true;
-							if (gst[s1len][j] != true) {
+							// if there is no free end gap, break the loop
+							if (gst[i][j] != true) {
 								break;
 							}
 						}
@@ -512,10 +672,13 @@ align(const unsigned char* query, const unsigned char* subj,
             }
             scores[i][j] = max_op_score;
 
+            // set operator flags
             ins[i][j] = (op_scores[0] == max_op_score);
             del[i][j] = (op_scores[1] == max_op_score);
             match[i][j] = (op_scores[2] == max_op_score);
             mmatch[i][j] = (op_scores[3] == max_op_score);
+
+            // handle central free gap
             if (i < s1len) {
             	gst[i][j] = false;
             	gen[i][j] = false;
