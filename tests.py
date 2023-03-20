@@ -50,7 +50,8 @@ class SimpleAlignmentTestCase(unittest.TestCase):
             print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 4, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
-        self.assertEqual(transitions_list[0][-1], "4=", 'wrong cigar string')
+        #self.assertEqual(transitions_list[0][-1], "4=", 'wrong cigar string')
+        self.assertEqual((cg_ref1, cg_gap, cg_ref2), ("2=", "", "2="))
 
     def test_align_2(self):
         """multiple equally high scoring alignments"""
@@ -68,8 +69,8 @@ class SimpleAlignmentTestCase(unittest.TestCase):
             print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 4, 'wrong score')
         self.assertEqual(len(transitions_list), 2, 'wrong number of highest-scoring transitions')
-        self.assertEqual(transitions_list[0][-1], "4=", 'wrong cigar string')
-        self.assertEqual(transitions_list[1][-1], "4=", 'wrong cigar string')
+        self.assertEqual(transitions_list[0][-3:], ("2=","","2="), 'wrong cigar string')
+        self.assertEqual(transitions_list[1][-3:], ("3=","","1="), 'wrong cigar string')
 
     def test_align_3(self):
         """no "free end gap" for alignment against first reference sequence"""
@@ -87,7 +88,7 @@ class SimpleAlignmentTestCase(unittest.TestCase):
             print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 1, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
-        self.assertEqual(transitions_list[0][-1], "2=2D2=", 'wrong cigar string')
+        self.assertEqual(transitions_list[0][-3:], ("2=2D1=","","1="), 'wrong cigar string')
 
     def test_align_4(self):
         """no "free end gap" for alignment against second reference sequence"""
@@ -105,7 +106,7 @@ class SimpleAlignmentTestCase(unittest.TestCase):
             print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 2, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
-        self.assertEqual(transitions_list[0][-1], "2=1D2=", 'wrong cigar string')
+        self.assertEqual(transitions_list[0][-3:], ("1=","","1=1D2="), 'wrong cigar string')
 
     def test_align_5(self):
         """no "free end gap" for both alignments"""
@@ -123,7 +124,7 @@ class SimpleAlignmentTestCase(unittest.TestCase):
             print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 1, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
-        self.assertEqual(transitions_list[0][-1], "2=2D2=", 'wrong cigar string')
+        self.assertEqual(transitions_list[0][-3:], ("2=1D","","1D2="), 'wrong cigar string')
 
     def test_align_6(self):
         """query shorter than references (free gaps only in one direction!)"""
@@ -141,7 +142,7 @@ class SimpleAlignmentTestCase(unittest.TestCase):
             print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 0, 'wrong score')
         self.assertEqual(len(transitions_list), 1, 'wrong number of highest-scoring transitions')
-        self.assertEqual(transitions_list[0][-1], "1D4=1D", 'wrong cigar string')
+        self.assertEqual(transitions_list[0][-3:], ("1D2=","","2=1D"), 'wrong cigar string')
 
     def test_align_7(self):
         """high ambiguity"""
@@ -197,7 +198,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te), row.score),
                          ('ref1', '+', 100, 'ref2', '+', 100, 10), 'unexpected alignment result')
 
@@ -231,7 +232,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te), row.score),
                          ('ref1', '-', 50, 'ref2', '+', 100, 10), 'unexpected alignment result')
 
@@ -265,7 +266,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te), row.score),
                          ('ref1', '+', 100, 'ref2', '-', 50, 10), 'unexpected alignment result')
 
@@ -299,7 +300,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te), row.score),
                          ('ref2', '-', 100, 'ref1', '-', 100, 10), 'unexpected alignment result')
 
@@ -332,7 +333,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te)),
                          ('ref1', '+', 100, 'ref2', '+', 100))
 
@@ -368,7 +369,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te)),
                          ('ref1', '+', 100, 'ref2', '+', 100))
 
@@ -404,7 +405,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te)),
                          ('ref1', '+', 25, 'ref2', '+', 25))
 
@@ -441,7 +442,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 3)
         #row = df.explode('transitions').iloc[0]
-        #ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        #ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         #self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te)),
         #                 ('ref1', '+', 25, 'ref2', '+', 25))
 
@@ -480,7 +481,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 1)
         row = df.explode('transitions').iloc[0]
-        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+        ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
         self.assertEqual((row.subj_ref1, row.strand_ref1, int(ts), row.subj_ref2, row.strand_ref2, int(te)),
                          ('ref1', '+', 25, 'ref2', '+', 25))
 
@@ -531,7 +532,7 @@ class FastqToTransitionsTestCase(unittest.TestCase):
         verbose(df.explode('transitions'))
         self.assertEqual(len(df.explode('transitions')), 8)
         for i,row in df.explode('transitions').iterrows():
-            ts, te, fna_ref1, fa_ref2, query_ts, query_te, cigar = row.transitions
+            ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2 = row.transitions
             self.assertEqual((int(ts), int(te)),
                              (25, 25))
 
