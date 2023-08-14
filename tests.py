@@ -160,6 +160,30 @@ class SimpleAlignmentTestCase(unittest.TestCase):
             print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
         self.assertEqual(score, 2, 'wrong score')
         self.assertEqual(len(transitions_list), 4, 'wrong number of highest-scoring transitions')
+    
+    def test_align_8(self):
+        free_gap = [False, True]
+        query_seq = 'CTTCAGGGGAATCGGAAGAGCACACGTCACGTGTGCTCTTCCATTCATTTTTGCAGG'
+        ref1 = 'CTTCAGGGTTGNNNNNNNNNNNNNNNNAGATGTGTATAAGAGACAG'
+        ref2 = 'TGAAAGCGCTGGGTCACGGCGACGGTAAGAGCGCCAGCAGCTACTAAGCTCTGATTTGCCGG'
+
+        score = c_align(args, query_seq, ref1, ref2, free_gap)
+        transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, '+', '+', 0, 0, 0, 0)
+
+        for i,(ts, te, fna_ref1, fa_ref2, query_ts, query_te, cg_ref1, cg_gap, cg_ref2) in enumerate(transitions_list):
+            cigar = "".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
+            print(f"\n#{i+1}: transition {query_ts}->{query_te}, score: {score}, cigar: {cigar}")
+            print_crossalignment(query_seq, ref1, ref2, cigar, fna_ref1, fa_ref2, query_ts, query_te)
+            
+            subj = ref1+ref2
+            qlen, s1len, s2len = len(query_seq), len(ref1), len(ref2)
+            cigar = " ".join([inflate_cigar(cg_ref1), inflate_cigar(cg_gap), inflate_cigar(cg_ref2)])
+            ret = assert_valid(query_seq.encode("utf8"), subj.encode("utf8"), 
+                               qlen, s1len, s2len,
+                               fna_ref1, fa_ref2,
+                               score, cigar.encode("utf8"),
+                               args.match, args.mismatch, args.gap_open, args.gap_extension)
+            self.assertEqual(ret, 0)
 
 class FastqToTransitionsTestCase(unittest.TestCase):
     """Integration tests"""

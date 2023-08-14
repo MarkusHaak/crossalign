@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <ctype.h>
 
 #define MAX_REC_DEPTH 300
 
@@ -213,6 +214,15 @@ matches(unsigned char a, unsigned char b)
 	return MATCH[a][b];
 }
 
+int print_bool_array(const bool** arr, int i, int j, int n) {
+	for (int x = i; x <= i+n; x++){
+		for (int y = j; y <= j+n; y++){
+			printf("%d\t", arr[x][y]);
+		}
+		printf("\n");
+	}
+}
+
 int get_cigar(const bool** ins, const bool** del, const bool** match, const bool** mmatch, const bool** gst, const bool** gen,
 		      const int16_t qlen, const int16_t s1len, const int16_t s2len,
 	          bool** reachable, const int16_t s1fna, const int16_t s2fa, const int16_t qts, const int16_t qte, char* cigar) {
@@ -334,7 +344,29 @@ int get_cigar(const bool** ins, const bool** del, const bool** match, const bool
 			}
 		}
 		// it should be impossible that non of the above cases is true
-		return -1;
+		/*
+		printf("ERROR\n");
+		printf("i == s1len+s2fa && j == qte : %d\n", i == s1len+s2fa && j == qte);
+		printf("i < s1len+s2len && cigar[len_cg-3] == 'D' : %d\n", i < s1len+s2len && cigar[len_cg-3] == 'D');
+		printf("reachable[i+1][j] == true && del[i+1][j] == true : %d\n", reachable[i+1][j] == true && del[i+1][j] == true);
+		printf("i < s1len+s2len && cigar[len_cg-1] == 'D' : %d\n", i < s1len+s2len && cigar[len_cg-1] == 'D');
+		printf("j < qlen && cigar[len_cg-1] == 'I' && !(i == s1len+s2fa && j==qte) : %d\n", j < qlen && cigar[len_cg-1] == 'I' && !(i == s1len+s2fa && j==qte));
+		printf("i = %d, j = %d\n", i, j);
+		cigar[len_cg] = '\0';
+		printf("len_cg = %d, cg = \"%s\"\n", len_cg, cigar);
+
+		printf("reachable:\n");
+		print_bool_array(reachable, i, j, 3);
+		printf("del:\n");
+		print_bool_array(del, i, j, 3);
+		printf("ins:\n");
+		print_bool_array(ins, i, j, 3);
+		printf("match:\n");
+		print_bool_array(match, i, j, 3);
+		printf("mmatch:\n");
+		print_bool_array(mmatch, i, j, 3);
+		*/
+		return -2;
 	}
 	cigar[len_cg] = '\0';
 	return 0;
@@ -545,7 +577,7 @@ int backtrace(const bool** ins, const bool** del, const bool** match, const bool
 						}
 					}
 					//else if (((match[i+1][j+1] == true || mmatch[i+1][j+1] == true) && reachable[i+1][j+1] == true) || 
-					else if (back_m_match_possible(i+1, j+1, ins, del, match, mmatch, qlen, s1len, s2len, reachable) || 
+					else if ((back_m_match_possible(i+1, j+1, ins, del, match, mmatch, qlen, s1len, s2len, reachable) && reachable[i+1][j+1] == true) || 
 						     (del[i+1][j] == true && reachable[i+1][j] == true)) {
 						if (i == s1len) {
 							align_ends_s2[0][j] = true;
@@ -710,4 +742,313 @@ align(const unsigned char* query, const unsigned char* subj,
 		}
 	}
 	return 0;
+}
+
+int 
+assert_valid(const unsigned char* query, const unsigned char* subj,
+	  		 const int16_t qlen, const int16_t s1len, const int16_t s2len,
+			 const int16_t s1_fna, const int16_t s2_fa, 
+	  		 const int16_t score, const unsigned char* cigar,
+	  		 const int16_t m, const int16_t mm, const int16_t go, const int16_t ge) {
+	// check score
+	int i = 0;
+	int j = 0;
+	int s = 0;
+	bool s1_done = false;
+	bool gap_done = false;
+	bool del_opened = false;
+	bool ins_opened = false;
+	for (int c = 0; c < strlen(cigar) ; c++) {
+		if (cigar[c] == ' ') {
+			if (s1_done == false) {
+				if (i != s1_fna) {
+					return -1;
+				}
+				s1_done = true;
+			}
+			else if (gap_done == false) {
+				i = i + s2_fa;
+				if (i != s1len + s2_fa) {
+					printf("i = %d, s1len = %d, s2_fa = %d\n", i, s1len, s2_fa);
+					return -2;
+				}
+				gap_done = true;
+			}
+			else {
+				return -3;
+			}
+		}
+		else {
+			if (s1_done == true && gap_done == false && cigar[c] != 'I') {
+				return -4;
+			}
+			if (cigar[c] == '=') {
+				if (MATCH[subj[i]][query[j]] == false) {
+					return -5;
+				}
+				s = s + m;
+				i++;
+				j++;
+				ins_opened = false;
+				del_opened = false;
+			}
+			else if (cigar[c] == 'X') {
+				if (MATCH[subj[i]][query[j]] == true) {
+					return -6;
+				}
+				s = s + mm;
+				i++;
+				j++;
+				ins_opened = false;
+				del_opened = false;
+			}
+			else if (cigar[c] == 'I') {
+				if ((i == (s1len - 1) && s1_done == false) || (i == s1len && gap_done == true)) {
+					return -7;
+				}
+				s = s + ge;
+				if (ins_opened == false){
+					s = s + go;
+					ins_opened = true;
+				}
+				j++;
+			}
+			else if (cigar[c] == 'D') {
+				s = s + ge;
+				if (del_opened == false){
+					s = s + go;
+					del_opened = true;
+				}
+				i++;
+			}
+			else {
+				return -8;
+			}
+			if (del_opened == true && ins_opened == true) {
+				return -9;
+			}
+		}
+	}
+	if (i > s1len + s2len) {
+		return -10;
+	}
+	if (j > qlen) {
+		return -11;
+	}
+	if (s != score) {
+		return -12;
+	}
+	return 0;
+}
+
+int 
+subj_to_query_coord_fw(
+	const unsigned char* cg,
+	const int16_t sst,
+	const int16_t sen,
+	const int16_t qst,
+	const int16_t qen,
+	const int16_t tst,
+	const int16_t ten,
+	int16_t* est,
+	int16_t* een
+) {
+	int16_t sloc, qloc; 
+	bool est_set, een_set;
+	est_set = false;
+	een_set = false;
+	// roi lies fully upstream aligned region
+	if (ten < sst) {
+		*est = qst - (sst - tst);
+        *een = qst - (sst - ten);
+		est_set = true;
+		een_set = true;
+	}
+	// roi lies fully downstream aligned region
+	else if (tst >= sen) {
+		*est = qen + (tst - sen);
+        *een = qen + (ten - sen);
+		est_set = true;
+		een_set = true;
+	}
+	// roi lies (partially) within the aligned region
+	else {
+		if (tst < sst) {
+			*est = qst - (sst - tst);
+			est_set = true;
+		}
+        if (ten >= sen) {
+            *een = qen + (ten - sen);
+			een_set = true;
+		}
+        sloc = sst;
+        qloc = qst;
+		// iterate over CIGAR string
+		int bases = 0;
+		for (int i=0; i<strlen(cg); i++) {
+			if (isdigit(cg[i])) {
+				bases = bases * 10 + (cg[i] - '0');
+			}
+			else {
+				switch (cg[i])
+				{
+				case '=':
+				case 'X':
+					if (sloc <= tst && tst < (sloc + bases)){
+						*est = qloc + (tst - sloc);
+						est_set = true;
+					}
+					if (sloc <= ten && ten < (sloc + bases)){
+						*een = qloc + (ten - sloc);
+						een_set = true;
+					}
+					sloc += bases;
+                	qloc += bases;
+					break;
+				case 'I':
+					qloc += bases;
+					break;
+				case 'D':
+					if (sloc <= tst && tst < (sloc + bases)){
+						*est = qloc;
+						est_set = true;
+					}
+					if (sloc <= ten && ten < (sloc + bases)){
+						*een = qloc;
+						een_set = true;
+					}
+					sloc += bases;
+					break;
+				
+				default:
+					return -1;
+				}
+				bases = 0;
+			}
+			if (est_set == true && een_set == true) {
+				return 0;
+			}
+		}
+	}
+	if (est_set == false || een_set == false) {
+		return -2;
+	}
+}
+
+int 
+subj_to_query_coord_rev(
+	const unsigned char* cg,
+	const int16_t sst,
+	const int16_t sen,
+	const int16_t qst,
+	const int16_t qen,
+	const int16_t tst,
+	const int16_t ten,
+	int16_t* est,
+	int16_t* een
+) {
+	int16_t sloc, qloc; 
+	bool est_set, een_set;
+	est_set = false;
+	een_set = false;
+	// roi lies fully upstream aligned region
+	if (ten < sst) {
+		*est = qen + (sst - ten);
+        *een = qen + (sst - tst);
+		est_set = true;
+		een_set = true;
+	}
+	// roi lies fully downstream aligned region
+	else if (tst >= sen) {
+		*est = qst - (ten - sen);
+        *een = qst - (tst - sen);
+		est_set = true;
+		een_set = true;
+	}
+	// roi lies (partially) within the aligned region
+	else {
+		if (tst < sst) {
+			*een = qen + (sst - tst);
+			een_set = true;
+		}
+        if (ten >= sen) {
+            *est = qst - (ten - sen) - 1;
+			est_set = true;
+		}
+        sloc = sen;
+        qloc = qst;
+		// iterate over CIGAR string
+		int bases = 0;
+		for (int i=0; i<strlen(cg); i++) {
+			if (isdigit(cg[i])) {
+				bases = bases * 10 + (cg[i] - '0');
+			}
+			else {
+				switch (cg[i])
+				{
+				case '=':
+				case 'X':
+					if (sloc > tst && tst >= (sloc - bases)){
+						*een = qloc + (sloc - tst);
+						een_set = true;
+					}
+					if (sloc > ten && ten >= (sloc - bases)){
+						*est = qloc + (sloc - ten) -1;
+						est_set = true;
+					}
+					sloc -= bases;
+                	qloc += bases;
+					break;
+				case 'I':
+					qloc += bases;
+					break;
+				case 'D':
+					if (sloc > tst && tst >= (sloc - bases)){
+						*een = qloc;
+						een_set = true;
+					}
+					if (sloc > ten && ten >= (sloc - bases)){
+						*est = qloc;
+						est_set = true;
+					}
+					sloc -= bases;
+					break;
+				
+				default:
+					return -1;
+				}
+				bases = 0;
+			}
+			if (est_set == true && een_set == true) {
+				return 0;
+			}
+		}
+	}
+	if (est_set == false || een_set == false) {
+		return -2;
+	}
+}
+
+int 
+subj_to_query_coord(
+	const unsigned char* cg,
+	const int16_t sst,
+	const int16_t sen,
+	const int16_t qst,
+	const int16_t qen,
+	const int16_t tst,
+	const int16_t ten,
+	const unsigned char strand,
+	int16_t* est,
+	int16_t* een
+) {
+	if (strand == '+') {
+		return subj_to_query_coord_fw(cg, sst, sen, qst, qen, tst, ten, est, een);
+	}
+	else if (strand == '-') {
+		return subj_to_query_coord_rev(cg, sst, sen, qst, qen, tst, ten, est, een);
+	}
+	else {
+		return -1;
+	}
 }

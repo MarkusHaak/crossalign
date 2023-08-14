@@ -50,6 +50,22 @@ get_transitions.argtypes = [nd_pp, ct.c_short, ct.c_short, ct.c_short,
                             nd_pp, nd_pp, nd_pp, nd_pp, nd_pp]
 get_transitions.restype = ct.c_int
 
+assert_valid = ct.CDLL(clib).assert_valid
+assert_valid.argtypes = [ct.c_char_p, ct.c_char_p, 
+                         ct.c_short, ct.c_short, ct.c_short,
+                         ct.c_short, ct.c_short,
+                         ct.c_short, ct.c_char_p,
+                         ct.c_short, ct.c_short, ct.c_short, ct.c_short]
+assert_valid.restype = ct.c_int
+
+subj_to_query_coord = ct.CDLL(clib).subj_to_query_coord
+subj_to_query_coord.argtypes = [ct.c_char_p,
+                                ct.c_short, ct.c_short, ct.c_short,
+                                ct.c_short, ct.c_short, ct.c_short,
+                                ct.c_char,
+                                ct.POINTER(ct.c_short), ct.POINTER(ct.c_short)]
+subj_to_query_coord.restype = ct.c_int
+
 ## arrays required by c functions
 scores, ops, transitions, align_ends, reachable, cigarbuffer = None, None, None, None, None, None
 scores_pp, ops_pp, transitions_pp, transitions_pp =  None, None, None, None
@@ -255,7 +271,7 @@ def main(args):
         logger.error("No alignments against adapter sequences produced.")
         exit(1)
 
-    logger.info(' - change adapter cigar operator M to either = or X:')
+    logger.info(' - change adapter cigar operator M to either = or X')
     ad_algn_df = ad_algn_df.parallel_apply(lambda row: row_cg_to_eqx(row, reads, adapter), axis=1)
 
     if not args.genome_alignment:
@@ -291,7 +307,7 @@ def main(args):
         logger.error("No alignments against genome sequences produced.")
         exit(1)
 
-    logger.info('- change genome cigar operator M to either = or X:')
+    logger.info(' - change genome cigar operator M to either = or X')
     gn_algn_df = gn_algn_df.parallel_apply(lambda row: row_cg_to_eqx(row, reads, genome), axis=1)
 
     if not (args.mean and args.std):
@@ -402,9 +418,11 @@ def main(args):
     else:
         df = df.apply(lambda row: c_align_row(row), axis=1)
 
+
+    logger.info('{:>11} {:>5.1f} % of attempted alignments were successfull'.format(sum(df.score.notnull()), sum(df.score.notnull())/sum(sel)*100.))
     sel = sel & df.score.notnull()
     c = sum(sel)
-    logger.info('{:>11} {:>5.1f} % of potential transitions successfully aligned'.format(c, c/len(df)*100.))
+    logger.info('{:>11} {:>5.1f} % of potential transitions analyzed'.format(c, c/len(df)*100.))
 
     df.loc[sel & (df.qlen > 0), 'norm_score'] = df[sel].score / (df[sel].qlen * args.match)
     df.loc[sel & (df.qlen == 0), 'norm_score'] = 1. # if the two alignments are fitting together perfetly
@@ -413,17 +431,18 @@ def main(args):
         c = sum(sel & (upper >= df.norm_score) & (df.norm_score > lower))
         logger.info('{:>11} {:>5.1f} % with {} >= normed score > {}'.format(c, c/sum(sel)*100., upper, lower))
 
-    c = sum(df.loc[sel].transitions.str.len() > 1)
+    # flag entries with multiple possible transitions as ambiguous
+    df['amb'] = False
+    df.loc[sel, 'amb'] = df.loc[sel, 'transitions'].str.len() > 1
+    
+    #c = sum(df.loc[sel].transitions.str.len() > 1)
+    c = sum(df.loc[sel, 'amb'])
     logger.info('{:>11} {:>5.1f} % of transitions are flagged as ambiguous (>1 highest-score alignment)'.format(c, c/len(df.loc[sel])*100.))
     c = df.loc[sel].transitions.str.len().sum()
     logger.info('{:>11} hightest-score alignments were produced in total'.format(c))
 
     if args.plot:
         plot_norm_score_distribution(df[sel], "all data")
-
-    # flag entries with multiple possible transitions as ambiguous
-    df['amb'] = False
-    df.loc[sel, 'amb'] = df.loc[sel, 'transitions'].str.len() > 1
 
     fn = args.prefix + ".alignment.df.pkl"
     logger.info(' - writing results to pickled pandas dataframe {}'.format(fn))
@@ -433,10 +452,10 @@ def main(args):
     logger.info(' - writing comma-seperated values text output to {}'.format(fn))
     df = df.loc[sel].explode('transitions')
 
-    for i,key in enumerate(["ts", "te", "fna_ref1", "fa_ref2", "query_ts", "query_te", "cigar"]):
+    for i,key in enumerate(["ts", "te", "fna_ref1", "fa_ref2", "query_ts", "query_te", "cg_ref1", "cg_gap", "cg_ref2"]):
         df[key] = df.transitions.str[i]
     df = df[['rid', 'order', 'subj_ad', 'strand_ad', 'subj_gn', 'strand_gn', 'ts', 'te',
-            'cigar', 'score', 'norm_score', 'amb', 
+            'cg_ref1', 'cg_gap', 'cg_ref2', 'score', 'norm_score', 'amb', 
             'qst_ad', 'qen_ad', 'sst_ad', 'sen_ad', 'qst_gn', 'qen_gn', 'sst_gn', 'sen_gn']]
     df.to_csv(fn, sep=",", index=False)
 
@@ -814,11 +833,11 @@ def set_qst_and_qen(df, sel, fix=True):
     # set query start and end for trivial cases
     for order, strand_ref1, strand_ref2, cg_ref1, cg_ref2, ref1_qen, ref2_qst in [( 1., 'strand_ad', 'strand_gn', cg_ad, cg_gn, 'qen_ad', 'qst_gn'),
                                                                                   (-1., 'strand_gn', 'strand_ad', cg_gn, cg_ad, 'qen_gn', 'qst_ad')]:
-        logger.info("setting {} qst".format(order))
+        logger.info("{:>19} setting {} qst".format("", order))
         sel_ = ((df[strand_ref1] == '+') & (cg_ref1.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) | \
                ((df[strand_ref1] == '-') & (cg_ref1.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip)))
         df.loc[sel & (df.order == order) & sel_ , 'qst'] = df.loc[sel & (df.order == order) & sel_, ref1_qen]
-        logger.info("setting {} qen".format(order))
+        logger.info("{:>19} setting {} qen".format("", order))
         sel_ = ((df[strand_ref2] == '+') & (cg_ref2.str.split('=', n=1).str[0].astype(np.float32) >= (args.wordsize + args.strip))) | \
                ((df[strand_ref2] == '-') & (cg_ref2.str.rstrip('=').str.rsplit('X', n=1).str[-1].astype(np.float32) >= (args.wordsize + args.strip))) 
         df.loc[sel & (df.order == order) & sel_ , 'qen'] = df.loc[sel & (df.order == order) & sel_, ref2_qst]
@@ -833,13 +852,13 @@ def set_qst_and_qen(df, sel, fix=True):
     # for query start and end for non-trivial cases
     if fix:
         if sum(sel & df.qst.isnull()) > 0:
-            logger.info('need to fix {} query starts'.format(sum(sel & df.qst.isnull())))
+            logger.info('{:>11} {:>5.1f} % query starts need to be corrected'.format(sum(sel & df.qst.isnull()), sum(sel & df.qst.isnull())/sum(sel)*100.))
             df.loc[sel & df.qst.isnull(), ['qst', 'trim_ref1']] = pd.DataFrame(
                 df.loc[sel & df.qst.isnull()].parallel_apply(lambda row: fix_qst(row), axis=1).values.tolist(), 
                 index=df.loc[sel & df.qst.isnull()].index, columns=['qst', 'trim_ref1']
             )
         if sum(sel & df.qen.isnull()) > 0:
-            logger.info('need to fix {} query ends'.format(sum(sel & df.qen.isnull())))
+            logger.info('{:>11} {:>5.1f} % query ends need to be corrected'.format(sum(sel & df.qen.isnull()), sum(sel & df.qen.isnull())/sum(sel)*100.))
             df.loc[sel & df.qen.isnull(), ['qen', 'trim_ref2']] = pd.DataFrame(
                 df.loc[sel & df.qen.isnull()].parallel_apply(lambda row: fix_qen(row), axis=1).values.tolist(), 
                 index=df.loc[sel & df.qen.isnull()].index, columns=['qen', 'trim_ref2']
@@ -873,19 +892,20 @@ def count_iter_items(iterable):
 def c_align(args, query_seq, ref1, ref2, free_gap):
     qlen, s1len, s2len = len(query_seq), len(ref1), len(ref2)
     query, subj = query_seq.encode("utf8"), (ref1+ref2).encode("utf8")
-    assert align(query, subj, qlen, s1len, s2len,
+    ret = align(query, subj, qlen, s1len, s2len,
                  args.match, args.mismatch, args.gap_open, args.gap_extension,
                  *free_gap,
-                 scores_pp, *ops_pp) == 0, "alignment failed"
+                 scores_pp, *ops_pp)
+    assert ret == 0, f"alignment failed, return code {ret}"
     score = scores[s1len+s2len, qlen]
 
-    assert backtrace(*ops_pp, qlen, s1len, s2len,
-                     align_ends_pp0, align_ends_pp1, reachable_pp) == 0 , \
-           "failed to trace back the alignment's end points"
-    assert get_transitions(ops_pp[0], qlen, s1len, s2len,
+    ret = backtrace(*ops_pp, qlen, s1len, s2len,
+                     align_ends_pp0, align_ends_pp1, reachable_pp)
+    assert ret == 0 , f"failed to trace back the alignment's end points, return code {ret}"
+    ret = get_transitions(ops_pp[0], qlen, s1len, s2len,
                            align_ends_pp0, align_ends_pp1, reachable_pp, 
-                           transitions_pp0, transitions_pp1) == 0, \
-           "failed to determine transition sites based on alignment endpoints"
+                           transitions_pp0, transitions_pp1)
+    assert ret == 0, f"failed to determine transition sites based on alignment endpoints, return code {ret}"
     return score
 
 def retrieve_transitions_list(query_seq, ref1, ref2, strand_ref1, strand_ref2, sst_ref1, sen_ref1, sst_ref2, sen_ref2):
@@ -894,10 +914,12 @@ def retrieve_transitions_list(query_seq, ref1, ref2, strand_ref1, strand_ref2, s
     for fna_ref1, fa_ref2 in zip(*np.where(transitions[0,:s1len+1, :s2len+1] >= 0)):
         query_ts = transitions[0, fna_ref1, fa_ref2]
         query_te = transitions[1, fna_ref1, fa_ref2]
-        assert get_cigar(*ops_pp, qlen, s1len, s2len,
+        ret = get_cigar(*ops_pp, qlen, s1len, s2len,
                          reachable_pp, fna_ref1, fa_ref2, query_ts, query_te,
-                         cigarbuffer) == 0, \
-               "failed to retrieve the CIGAR string for alignment"
+                         cigarbuffer)
+        #if ret != 0:
+        #    breakpoint()
+        assert ret == 0, f"failed to retrieve the CIGAR string for alignment, retrun code {ret}"
         #cigar = cigarbuffer.value.decode('utf-8')
         #cigar = "".join(["{}{}".format(count_iter_items(g), k) for k,g in groupby(cigar)])
         cigars = cigarbuffer.value.decode('utf-8').split(' ')
@@ -953,13 +975,17 @@ def c_align_row(row):
     query_seq = reads.loc[row.rid].seq[int(row.qst) : int(row.qen)]
     ref1, ref2 = get_reference_sequences(row)
 
-    score = c_align(args, query_seq, ref1, ref2, free_gap)
+    try:
+        score = c_align(args, query_seq, ref1, ref2, free_gap)
 
-    transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, row.strand_ref1, row.strand_ref2, 
-                                                 row.sst_ref1, row.sen_ref1, row.sst_ref2, row.sen_ref2)
+        transitions_list = retrieve_transitions_list(query_seq, ref1, ref2, row.strand_ref1, row.strand_ref2, 
+                                                    row.sst_ref1, row.sen_ref1, row.sst_ref2, row.sen_ref2)
+        row['score'] = score
+        row['transitions'] = transitions_list
+    except Exception as e:
+        logging.error(e, exc_info=True)
+        logging.error(f"The above error was thrown by the following alignment:\nm,mm,go,ge : {args.match}, {args.mismatch}, {args.gap_open}, {args.gap_extension}\nquery_seq : {query_seq}\nref1 : {ref1}\nref2 : {ref2}\nfree_gap : {free_gap}\nrow : {row}")
 
-    row['score'] = score
-    row['transitions'] = transitions_list
     return row
 
 def set_references(df, sel):
