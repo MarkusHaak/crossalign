@@ -233,7 +233,7 @@ def main(args):
 
     if args.sites_of_interest:
         logger.info(" - parsing site of interest (soi) file for rejecting potential transitions that do not span any soi ...")
-        soi = pd.read_csv(args.sites_of_interest, header=None, sep='\t', names=['subj', 'strand', 'site']).set_index(['subj', 'strand'], drop=True)
+        soi = pd.read_csv(args.sites_of_interest, header=None, sep=r"\s+", names=['subj', 'strand', 'site']).set_index(['subj', 'strand'], drop=True)
 
     adapter_fn, genome_fn = args.adapter, args.genome
     adapter, genome, reads = read_sequence_data(fq_fns, adapter_fn, genome_fn)
@@ -418,8 +418,9 @@ def main(args):
     else:
         df = df.apply(lambda row: c_align_row(row), axis=1)
 
-
-    logger.info('{:>11} {:>5.1f} % of attempted alignments were successfull'.format(sum(df.score.notnull()), sum(df.score.notnull())/sum(sel)*100.))
+    logger.info('{:>11} {:>5.1f} % of the potential transitions span any site of interest and were aligned'.format(sum(df['spans_soi']), sum(df['spans_soi'])/sum(sel)*100.))
+    c = sum(sel & df['spans_soi'])
+    logger.info('{:>11} {:>5.1f} % of those attempted alignments were successful'.format(sum(df.score.notnull()), sum(df.score.notnull())/c*100.))
     sel = sel & df.score.notnull()
     c = sum(sel)
     logger.info('{:>11} {:>5.1f} % of potential transitions analyzed'.format(c, c/len(df)*100.))
@@ -940,13 +941,13 @@ def retrieve_transitions_list(query_seq, ref1, ref2, strand_ref1, strand_ref2, s
 def c_align_row(row):
     row['score'] = np.nan
     row['transitions'] = []
-    if pd.isnull(row.max_ref_len):
+    row['spans_soi'] = False
+    if pd.isnull(row.max_ref_len): # only selected rows are aligned
         return row
 
     free_gap = [True, True]
     if args.sites_of_interest:
         # align only those reads that span a site of interest
-        soi_hit = False
         if (row.subj_ref1, row.strand_ref1) in soi.index:
             d = soi.loc[[(row.subj_ref1, row.strand_ref1)]]
             d = d.loc[(row.sst_ref1 <= d.site) & (d.site <= row.sen_ref1)]
@@ -955,7 +956,7 @@ def c_align_row(row):
                     row.sen_ref1 = d.site[0]
                 else:
                     row.sst_ref1 = d.site[0]
-                soi_hit ^= True
+                row['spans_soi'] ^= True
                 free_gap[0] = False
         opp_strand_ref2 = '+' if row.strand_ref2 == '-' else '-'
         if (row.subj_ref2, opp_strand_ref2) in soi.index:
@@ -966,9 +967,9 @@ def c_align_row(row):
                     row.sst_ref2 = d.site[0]
                 else:
                     row.sen_ref2 = d.site[0]
-                soi_hit ^= True
+                row['spans_soi'] ^= True
                 free_gap[1] = False
-        if soi_hit == False:
+        if row['spans_soi'] == False:
             return row
 
     # determine query and reference sequences
@@ -1101,7 +1102,7 @@ def plot_norm_score_distribution(df, title, nbins=50):
     plt.show()
 
 def matches_to_eqx(cigar, subject, query):
-    '''Replaces "M" characters in CIGAR string with characters "="" for match or "X" for mismatch'''
+    '''Replaces "M" characters in CIGAR string with characters "=" for match or "X" for mismatch'''
     new_cigar_ops = []
     sloc, qloc = 0, 0
     for m in re.finditer(r'(\d+)(\D)', cigar):

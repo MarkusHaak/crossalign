@@ -1,5 +1,7 @@
-from crossalign import *
+from crossalign import ArgHelpFormatter
 import argparse, os, re
+import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 import logging
 
@@ -18,7 +20,11 @@ def parse_args(args_=None):
                             help='Prefix for the created output files. (Default: same as prefix of single input file)')
     main_group.add_argument('--min_norm_score',
                             default=np.NINF,
+                            type=float,
                             help='''Reject transitions with a length normalized alignment score lower than this threshold.''')
+    main_group.add_argument('--filter_ambiguous',
+                            action="store_true",
+                            help='''Reject transitions that are ambiguous with respect to the genomic insertion site.''')
 
     help_group = parser.add_argument_group('Help')
     help_group.add_argument('-h', '--help', 
@@ -50,7 +56,10 @@ def main():
         df['one_div_sites'] = 1 / df.transitions.str.len()
         d = df.explode('transitions')
         # filter lowquality alignments
-        d = d.loc[d.norm_score >= args.min_norm_score]
+        sel = (d.norm_score >= args.min_norm_score)
+        if args.filter_ambiguous:
+            sel &= (d.amb == False)
+        d = d.loc[sel]
         # add site columns
         d['site_gn'] = np.nan
         d['site_ad'] = np.nan
@@ -69,7 +78,7 @@ def main():
                           fill_value=0.)
     for subj_gn in d.subj_gn.unique():
         for strand in ['+', '-']:
-            fp = f"{args.prefix}.all.genome.{subj_gn}_{strand}.wig"
+            fp = f"{args.prefix}.genome.{subj_gn}_{strand}.wig"
             print(f"writing to file {fp} ...")
             with open(fp, 'w') as f:
                 print(f"variableStep  chrom={subj_gn}", file=f)
@@ -81,7 +90,7 @@ def main():
         sites = sites.add(d.groupby(["subj_gn", "site_gn"])[['one_div_sites']].sum(),
                           fill_value=0.)
     for subj_gn in d.subj_gn.unique():
-        fp = f"{args.prefix}.all.genome.{subj_gn}.wig"
+        fp = f"{args.prefix}.genome.{subj_gn}.wig"
         print(f"writing to file {fp} ...")
         with open(fp, 'w') as f:
             print(f"variableStep  chrom={subj_gn}", file=f)
@@ -94,7 +103,7 @@ def main():
                           fill_value=0.)
     for subj_ad in d.subj_ad.unique():
         for strand in ['+', '-']:
-            fp = f"{args.prefix}.all.adapter.{subj_ad}_{strand}.wig"
+            fp = f"{args.prefix}.adapter.{subj_ad}_{strand}.wig"
             print(f"writing to file {fp} ...")
             with open(fp, 'w') as f:
                 print(f"variableStep  chrom={subj_ad}", file=f)
@@ -106,64 +115,64 @@ def main():
         sites = sites.add(d.groupby(["subj_ad", "site_ad"])[['one_div_sites']].sum(),
                           fill_value=0.)
     for subj_ad in d.subj_ad.unique():
-        fp = f"{args.prefix}.all.adapter.{subj_ad}.wig"
+        fp = f"{args.prefix}.adapter.{subj_ad}.wig"
         print(f"writing to file {fp} ...")
         with open(fp, 'w') as f:
             print(f"variableStep  chrom={subj_ad}", file=f)
             for site, row in sites.loc[subj_ad].iterrows():
                 print(int(site)+1, row.one_div_sites, file=f)
 
-    # unambiguous
-    # genome by subj and strand
-    sites = ds[0].loc[d.amb == False].groupby(["subj_gn", "strand_gn", "site_gn"])[['one_div_sites']].sum()
-    for d in ds[1:]:
-        sites = sites.add(d.loc[d.amb == False].groupby(["subj_gn", "strand_gn", "site_gn"])[['one_div_sites']].sum(),
-                          fill_value=0.)
-    for subj_gn in d.subj_gn.unique():
-        for strand in ['+', '-']:
-            fp = f"{args.prefix}.unambiguous.genome.{subj_gn}_{strand}.wig"
-            print(f"writing to file {fp} ...")
-            with open(fp, 'w') as f:
-                print(f"variableStep  chrom={subj_gn}", file=f)
-                for site, row in sites.loc[subj_gn, strand].iterrows():
-                    print(int(site)+1, row.one_div_sites, file=f)
-    # genome by subj and strands combined
-    sites = ds[0].loc[d.amb == False].groupby(["subj_gn", "site_gn"])[['one_div_sites']].sum()
-    for d in ds[1:]:
-        sites = sites.add(d.loc[d.amb == False].groupby(["subj_gn", "site_gn"])[['one_div_sites']].sum(),
-                          fill_value=0.)
-    for subj_gn in d.subj_gn.unique():
-        fp = f"{args.prefix}.unambiguous.genome.{subj_gn}.wig"
-        print(f"writing to file {fp} ...")
-        with open(fp, 'w') as f:
-            print(f"variableStep  chrom={subj_gn}", file=f)
-            for site, row in sites.loc[subj_gn].iterrows():
-                print(int(site)+1, row.one_div_sites, file=f)
-    # adapter by subj and strand
-    sites = ds[0].loc[d.amb == False].groupby(["subj_ad", "strand_ad", "site_ad"])[['one_div_sites']].sum()
-    for d in ds[1:]:
-        sites = sites.add(d.loc[d.amb == False].groupby(["subj_ad", "strand_ad", "site_ad"])[['one_div_sites']].sum(),
-                          fill_value=0.)
-    for subj_ad in d.subj_ad.unique():
-        for strand in ['+', '-']:
-            fp = f"{args.prefix}.unambiguous.adapter.{subj_ad}_{strand}.wig"
-            print(f"writing to file {fp} ...")
-            with open(fp, 'w') as f:
-                print(f"variableStep  chrom={subj_ad}", file=f)
-                for site, row in sites.loc[subj_ad, strand].iterrows():
-                    print(int(site)+1, row.one_div_sites, file=f)
-    # adapter by subj and strands combined
-    sites = ds[0].loc[d.amb == False].groupby(["subj_ad", "site_ad"])[['one_div_sites']].sum()
-    for d in ds[1:]:
-        sites = sites.add(d.loc[d.amb == False].groupby(["subj_ad", "site_ad"])[['one_div_sites']].sum(),
-                          fill_value=0.)
-    for subj_ad in d.subj_ad.unique():
-        fp = f"{args.prefix}.unambiguous.adapter.{subj_ad}.wig"
-        print(f"writing to file {fp} ...")
-        with open(fp, 'w') as f:
-            print(f"variableStep  chrom={subj_ad}", file=f)
-            for site, row in sites.loc[subj_ad].iterrows():
-                print(int(site)+1, row.one_div_sites, file=f)
+    ## unambiguous
+    ## genome by subj and strand
+    #sites = ds[0].loc[d.amb == False].groupby(["subj_gn", "strand_gn", "site_gn"])[['one_div_sites']].sum()
+    #for d in ds[1:]:
+    #    sites = sites.add(d.loc[d.amb == False].groupby(["subj_gn", "strand_gn", "site_gn"])[['one_div_sites']].sum(),
+    #                      fill_value=0.)
+    #for subj_gn in d.subj_gn.unique():
+    #    for strand in ['+', '-']:
+    #        fp = f"{args.prefix}.unambiguous.genome.{subj_gn}_{strand}.wig"
+    #        print(f"writing to file {fp} ...")
+    #        with open(fp, 'w') as f:
+    #            print(f"variableStep  chrom={subj_gn}", file=f)
+    #            for site, row in sites.loc[subj_gn, strand].iterrows():
+    #                print(int(site)+1, row.one_div_sites, file=f)
+    ## genome by subj and strands combined
+    #sites = ds[0].loc[d.amb == False].groupby(["subj_gn", "site_gn"])[['one_div_sites']].sum()
+    #for d in ds[1:]:
+    #    sites = sites.add(d.loc[d.amb == False].groupby(["subj_gn", "site_gn"])[['one_div_sites']].sum(),
+    #                      fill_value=0.)
+    #for subj_gn in d.subj_gn.unique():
+    #    fp = f"{args.prefix}.unambiguous.genome.{subj_gn}.wig"
+    #    print(f"writing to file {fp} ...")
+    #    with open(fp, 'w') as f:
+    #        print(f"variableStep  chrom={subj_gn}", file=f)
+    #        for site, row in sites.loc[subj_gn].iterrows():
+    #            print(int(site)+1, row.one_div_sites, file=f)
+    ## adapter by subj and strand
+    #sites = ds[0].loc[d.amb == False].groupby(["subj_ad", "strand_ad", "site_ad"])[['one_div_sites']].sum()
+    #for d in ds[1:]:
+    #    sites = sites.add(d.loc[d.amb == False].groupby(["subj_ad", "strand_ad", "site_ad"])[['one_div_sites']].sum(),
+    #                      fill_value=0.)
+    #for subj_ad in d.subj_ad.unique():
+    #    for strand in ['+', '-']:
+    #        fp = f"{args.prefix}.unambiguous.adapter.{subj_ad}_{strand}.wig"
+    #        print(f"writing to file {fp} ...")
+    #        with open(fp, 'w') as f:
+    #            print(f"variableStep  chrom={subj_ad}", file=f)
+    #            for site, row in sites.loc[subj_ad, strand].iterrows():
+    #                print(int(site)+1, row.one_div_sites, file=f)
+    ## adapter by subj and strands combined
+    #sites = ds[0].loc[d.amb == False].groupby(["subj_ad", "site_ad"])[['one_div_sites']].sum()
+    #for d in ds[1:]:
+    #    sites = sites.add(d.loc[d.amb == False].groupby(["subj_ad", "site_ad"])[['one_div_sites']].sum(),
+    #                      fill_value=0.)
+    #for subj_ad in d.subj_ad.unique():
+    #    fp = f"{args.prefix}.unambiguous.adapter.{subj_ad}.wig"
+    #    print(f"writing to file {fp} ...")
+    #    with open(fp, 'w') as f:
+    #        print(f"variableStep  chrom={subj_ad}", file=f)
+    #        for site, row in sites.loc[subj_ad].iterrows():
+    #            print(int(site)+1, row.one_div_sites, file=f)
 
 
 if __name__ == "__main__":

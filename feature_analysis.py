@@ -1,8 +1,10 @@
-from crossalign import *
+from crossalign import ArgHelpFormatter
 import argparse, os, re
 from matplotlib import pyplot as plt
 import logging
 import Bio
+import numpy as np
+import pandas as pd
 
 def parse_args(args_=None):
     global args
@@ -19,6 +21,7 @@ def parse_args(args_=None):
                             required=True,
                             help='''Path to a genbank file containing the genome annotation.''')
     main_group.add_argument('--min_norm_score',
+                            type=float,
                             default=np.NINF,
                             help='''Reject transitions with a length normalized alignment score lower than this threshold.''')
     main_group.add_argument('--filter_ambiguous',
@@ -87,9 +90,9 @@ def gb_to_feature_list(fp, exclude_keys=['source', 'gene', 'rRNA'], prom_dist=50
                     locus_tag = [qf.value for qf in feature.qualifiers if qf.key == '/locus_tag=']
                     if not locus_tag:
                         locus_tag = "_".join([feature.key, feature.location])
-                        if locus_tag in [locus_tag for replicon, locus_tag, gene, start, end, strand, repl_len in data]:
+                        if locus_tag in [l_tag for replicon, l_tag, gene, start, end, strand, repl_len in data]:
                             i = 2
-                            while f"{locus_tag}_{i}" in [locus_tag for replicon, locus_tag, gene, start, end, strand, repl_len in data]:
+                            while f"{locus_tag}_{i}" in [l_tag for replicon, l_tag, gene, start, end, strand, repl_len in data]:
                                 i += 1
                             locus_tag = f"{locus_tag}_{i}"
                         print("WARNING: no locus_tag for feature", feature.key, feature.location, " --> set to", locus_tag)
