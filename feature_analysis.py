@@ -140,6 +140,7 @@ def count_feature_hits(features, d, min_norm_score=np.NINF, filter_ambiguous=Fal
             print(f"WARNING: replicon ID {subj} not found in genbank file, skipping.")
             print(f"         All replicon IDs in genbank file: {features.index.droplevel(1).unique()}")
             print(f"         Check that IDs in fasta header match the VERSION tags in the ganbank files.")
+            continue
         hits[subj] = {'+' : np.zeros(features.loc[subj].iloc[0].repl_len + 1),
                       '-' : np.zeros(features.loc[subj].iloc[0].repl_len + 1)}
         sum_hits[subj] = 0
