@@ -201,7 +201,7 @@ def parse_args(args_=None):
     help_group = parser.add_argument_group('Help')
     help_group.add_argument('-h', '--help', 
                             action='help', 
-                            default=argparse.SUPPRESS,
+                            #default=argparse.SUPPRESS,
                             help='Show this help message and exit.')
     if args_:
         args = parser.parse_args(args_)
